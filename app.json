@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Football Management",
+    "slug": "football-management-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/ASL_logo.png",
+    "userInterfaceStyle": "dark",
+    "entryPoint": "./src/App.js",
+    "splash": {
+      "image": "./assets/ASL_logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#040404"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.footballmanagement.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/ASL_logo.png",
+        "backgroundColor": "#B98817"
+      },
+      "package": "com.footballmanagement.app"
+    },
+    "web": {
+      "favicon": "./assets/ASL_logo.png"
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
