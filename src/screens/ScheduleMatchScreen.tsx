@@ -1,59 +1,88 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState } from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal } from "react-native"
-import { useAuth } from "../contexts/AuthContext"
-import { useTournament } from "../contexts/TournamentContext"
-import { COLORS } from "../constants/colors"
-import { Ionicons } from "@expo/vector-icons"
-import type { ScheduleMatchData } from "../types"
-import CustomDateTimePicker from "../../components/DateTimePicker"
+import type React from "react";
+import { useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  Modal,
+} from "react-native";
+import { useAuth } from "../contexts/AuthContext";
+import { useTournament } from "../contexts/TournamentContext";
+import { COLORS } from "../constants/colors";
+import { Ionicons } from "@expo/vector-icons";
+import type { ScheduleMatchData } from "../types";
+import CustomDateTimePicker from "../../components/DateTimePicker";
 
 const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
-  const { user } = useAuth()
-  const { tournament, scheduleMatch } = useTournament()
-  const [showScheduleModal, setShowScheduleModal] = useState(false)
-  const [selectedHomeTeam, setSelectedHomeTeam] = useState("")
-  const [selectedAwayTeam, setSelectedAwayTeam] = useState("")
-  const [matchDate, setMatchDate] = useState("")
-  const [matchTime, setMatchTime] = useState("")
-  const [venue, setVenue] = useState("Football Arena")
-  const [selectedWeek, setSelectedWeek] = useState(1)
+  const { user } = useAuth();
+  const { tournament, scheduleMatch } = useTournament();
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [selectedHomeTeam, setSelectedHomeTeam] = useState("");
+  const [selectedAwayTeam, setSelectedAwayTeam] = useState("");
+  const [matchDate, setMatchDate] = useState("");
+  const [matchTime, setMatchTime] = useState("");
+  const [venue, setVenue] = useState("Football Arena");
+  const [selectedWeek, setSelectedWeek] = useState(1);
 
   // Date and time picker states
-  const [date, setDate] = useState(new Date())
-  const [time, setTime] = useState(new Date())
+  const [date, setDate] = useState(new Date());
+  const [time, setTime] = useState(new Date());
 
   const handleDateChange = (selectedDate: Date) => {
-    setDate(selectedDate)
+    setDate(selectedDate);
     // Format date as YYYY-MM-DD
-    const formattedDate = selectedDate.toISOString().split("T")[0]
-    setMatchDate(formattedDate)
-  }
+    const formattedDate = selectedDate.toISOString().split("T")[0];
+    setMatchDate(formattedDate);
+  };
+  const MATCH_STATUS = {
+    UPCOMING: "upcoming",
+    LIVE: "live",
+    COMPLETED: "completed",
+  };
+  const getMatchStatus = (matchDateTime: string | number | Date) => {
+    const currentTime = new Date();
+    const matchTime = new Date(matchDateTime);
+
+    // Calculate end time (match time + 1.2 hours)
+    const matchEndTime = new Date(matchTime);
+    matchEndTime.setMinutes(matchEndTime.getMinutes() + 72); // 1.2 hours = 72 minutes
+
+    if (currentTime >= matchTime && currentTime < matchEndTime) {
+      return MATCH_STATUS.LIVE;
+    } else if (currentTime >= matchEndTime) {
+      return MATCH_STATUS.COMPLETED;
+    } else {
+      return MATCH_STATUS.UPCOMING;
+    }
+  };
 
   const handleTimeChange = (selectedTime: Date) => {
-    setTime(selectedTime)
+    setTime(selectedTime);
     // Format time as HH:MM
-    const hours = selectedTime.getHours().toString().padStart(2, "0")
-    const minutes = selectedTime.getMinutes().toString().padStart(2, "0")
-    setMatchTime(`${hours}:${minutes}`)
-  }
+    const hours = selectedTime.getHours().toString().padStart(2, "0");
+    const minutes = selectedTime.getMinutes().toString().padStart(2, "0");
+    setMatchTime(`${hours}:${minutes}`);
+  };
 
   const handleScheduleMatch = () => {
     if (!selectedHomeTeam || !selectedAwayTeam || !matchDate || !matchTime) {
-      Alert.alert("Error", "Please fill all fields")
-      return
+      Alert.alert("Error", "Please fill all fields");
+      return;
     }
 
     if (selectedHomeTeam === selectedAwayTeam) {
-      Alert.alert("Error", "Home and away teams cannot be the same")
-      return
+      Alert.alert("Error", "Home and away teams cannot be the same");
+      return;
     }
 
     if (user?.role !== "management") {
-      Alert.alert("Access Denied", "Only management can schedule matches")
-      return
+      Alert.alert("Access Denied", "Only management can schedule matches");
+      return;
     }
 
     const matchData: ScheduleMatchData = {
@@ -63,50 +92,62 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       time: matchTime,
       venue,
       week: selectedWeek,
-    }
+    };
 
-    scheduleMatch(matchData)
+    scheduleMatch(matchData);
 
     // Reset form
-    setSelectedHomeTeam("")
-    setSelectedAwayTeam("")
-    setMatchDate("")
-    setMatchTime("")
-    setVenue("Football Arena")
-    setShowScheduleModal(false)
+    setSelectedHomeTeam("");
+    setSelectedAwayTeam("");
+    setMatchDate("");
+    setMatchTime("");
+    setVenue("Football Arena");
+    setShowScheduleModal(false);
 
-    Alert.alert("Success", "Match scheduled successfully!")
-  }
+    Alert.alert("Success", "Match scheduled successfully!");
+  };
 
   const getTeamName = (teamId: string) => {
-    return tournament?.teams.find((team) => team.id === teamId)?.name || "Unknown Team"
-  }
+    return (
+      tournament?.teams.find((team) => team.id === teamId)?.name ||
+      "Unknown Team"
+    );
+  };
 
-  const upcomingMatches = tournament?.matches.filter((match) => match.status === "upcoming") || []
+  const upcomingMatches =
+    tournament?.matches.filter((match) => match.status === "upcoming") || [];
 
   const formatDate = (dateString: string) => {
-    if (!dateString) return ""
-    const date = new Date(dateString)
+    if (!dateString) return "";
+    const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",
       month: "long",
       day: "numeric",
-    })
-  }
+    });
+  };
 
   const navigateToMatchFixture = (matchId: string) => {
-    navigation.navigate("MatchFixture", { matchId })
-  }
+    navigation.navigate("MatchFixture", { matchId });
+  };
+
+  
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
           <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Schedule Matches</Text>
-        <TouchableOpacity style={styles.addButton} onPress={() => setShowScheduleModal(true)}>
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => setShowScheduleModal(true)}
+        >
           <Ionicons name="add" size={24} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
@@ -115,34 +156,39 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>📅 Scheduling Rules</Text>
           <Text style={styles.infoText}>
-            • Tournament runs for 4 weeks{"\n"}• Each team plays 7 matches (28 total){"\n"}• Week 4 is reserved for
-            playoffs{"\n"}• All matches at Football Arena
+            • Tournament runs for 4 weeks{"\n"}• Each team plays 7 matches (28
+            total){"\n"}• Week 4 is reserved for playoffs{"\n"}• All matches at
+            Football Arena
           </Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Upcoming Matches ({upcomingMatches.length})</Text>
+          <Text style={styles.sectionTitle}>
+            Upcoming Matches ({upcomingMatches.length})
+          </Text>
           {upcomingMatches.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="calendar-outline" size={60} color={COLORS.gray} />
               <Text style={styles.emptyText}>No matches scheduled yet</Text>
-              <Text style={styles.emptySubtext}>Tap the + button to schedule a match</Text>
+              <Text style={styles.emptySubtext}>
+                Tap the + button to schedule a match
+              </Text>
             </View>
           ) : (
             upcomingMatches.map((match) => (
-              <View
-                key={match.id}
-                style={styles.matchCard}
-                
-              >
+              <View key={match.id} style={styles.matchCard}>
                 <View style={styles.matchHeader}>
                   <Text style={styles.weekBadge}>Week {match.week}</Text>
                   <Text style={styles.matchDate}>{formatDate(match.date)}</Text>
                 </View>
                 <View style={styles.matchTeams}>
-                  <Text style={styles.teamName}>{getTeamName(match.homeTeamId)}</Text>
+                  <Text style={styles.teamName}>
+                    {getTeamName(match.homeTeamId)}
+                  </Text>
                   <Text style={styles.vs}>VS</Text>
-                  <Text style={styles.teamName}>{getTeamName(match.awayTeamId)}</Text>
+                  <Text style={styles.teamName}>
+                    {getTeamName(match.awayTeamId)}
+                  </Text>
                 </View>
                 <View style={styles.matchDetails}>
                   <Text style={styles.matchTime}>🕐 {match.time}</Text>
@@ -172,10 +218,19 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   {[1, 2, 3].map((week) => (
                     <TouchableOpacity
                       key={week}
-                      style={[styles.weekButton, selectedWeek === week && styles.selectedWeekButton]}
+                      style={[
+                        styles.weekButton,
+                        selectedWeek === week && styles.selectedWeekButton,
+                      ]}
                       onPress={() => setSelectedWeek(week)}
                     >
-                      <Text style={[styles.weekButtonText, selectedWeek === week && styles.selectedWeekButtonText]}>
+                      <Text
+                        style={[
+                          styles.weekButtonText,
+                          selectedWeek === week &&
+                            styles.selectedWeekButtonText,
+                        ]}
+                      >
                         Week {week}
                       </Text>
                     </TouchableOpacity>
@@ -185,15 +240,27 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
               <View style={styles.teamSelection}>
                 <Text style={styles.inputLabel}>A Team:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.teamPicker}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.teamPicker}
+                >
                   {tournament?.teams.map((team) => (
                     <TouchableOpacity
                       key={team.id}
-                      style={[styles.teamPickerItem, selectedHomeTeam === team.id && styles.selectedTeamPickerItem]}
+                      style={[
+                        styles.teamPickerItem,
+                        selectedHomeTeam === team.id &&
+                          styles.selectedTeamPickerItem,
+                      ]}
                       onPress={() => setSelectedHomeTeam(team.id)}
                     >
                       <Text
-                        style={[styles.teamPickerText, selectedHomeTeam === team.id && styles.selectedTeamPickerText]}
+                        style={[
+                          styles.teamPickerText,
+                          selectedHomeTeam === team.id &&
+                            styles.selectedTeamPickerText,
+                        ]}
                       >
                         {team.name}
                       </Text>
@@ -204,15 +271,27 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
               <View style={styles.teamSelection}>
                 <Text style={styles.inputLabel}>B Team:</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.teamPicker}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.teamPicker}
+                >
                   {tournament?.teams.map((team) => (
                     <TouchableOpacity
                       key={team.id}
-                      style={[styles.teamPickerItem, selectedAwayTeam === team.id && styles.selectedTeamPickerItem]}
+                      style={[
+                        styles.teamPickerItem,
+                        selectedAwayTeam === team.id &&
+                          styles.selectedTeamPickerItem,
+                      ]}
                       onPress={() => setSelectedAwayTeam(team.id)}
                     >
                       <Text
-                        style={[styles.teamPickerText, selectedAwayTeam === team.id && styles.selectedTeamPickerText]}
+                        style={[
+                          styles.teamPickerText,
+                          selectedAwayTeam === team.id &&
+                            styles.selectedTeamPickerText,
+                        ]}
                       >
                         {team.name}
                       </Text>
@@ -223,16 +302,26 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
               <View style={styles.dateTimeSection}>
                 <Text style={styles.inputLabel}>Match Date:</Text>
-                <CustomDateTimePicker mode="date" value={date} onChange={handleDateChange} placeholder="Select Date" />
+                <CustomDateTimePicker
+                  mode="date"
+                  value={date}
+                  onChange={handleDateChange}
+                  placeholder="Select Date"
+                />
               </View>
 
               <View style={styles.dateTimeSection}>
                 <Text style={styles.inputLabel}>Match Time:</Text>
-                <CustomDateTimePicker mode="time" value={time} onChange={handleTimeChange} placeholder="Select Time" />
+                <CustomDateTimePicker
+                  mode="time"
+                  value={time}
+                  onChange={handleTimeChange}
+                  placeholder="Select Time"
+                />
               </View>
 
               <View style={styles.dateTimeSection}>
-                <Text style={styles.inputLabel}>Venue:</Text>
+                <Text style={styles.inputLabel}>Venue(Fixed )</Text>
                 <View style={styles.venueContainer}>
                   <Text style={styles.venueText}>Football Arena</Text>
                   <Ionicons name="location" size={20} color={COLORS.primary} />
@@ -247,7 +336,10 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.modalButton, styles.confirmButton]} onPress={handleScheduleMatch}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.confirmButton]}
+                  onPress={handleScheduleMatch}
+                >
                   <Text style={styles.confirmButtonText}>Schedule Match</Text>
                 </TouchableOpacity>
               </View>
@@ -256,8 +348,8 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         </View>
       </Modal>
     </View>
-  )
-}
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -508,9 +600,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   venueText: {
-    color: COLORS.white,
+    color: COLORS.gray,
     fontSize: 16,
   },
-})
+});
 
-export default ScheduleMatchScreen
+export default ScheduleMatchScreen;
