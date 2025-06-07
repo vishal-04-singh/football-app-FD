@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
+import { createContext, useContext, useState, useEffect, useCallback } from "react"
 import { apiService } from "../../services/api"
 import type { Tournament, Team, Player, Match } from "../types"
 
@@ -24,6 +24,13 @@ interface MatchStats {
   fouls: { home: number; away: number }
 }
 
+// Match status constants
+const MATCH_STATUS = {
+  UPCOMING: "upcoming",
+  LIVE: "live",
+  COMPLETED: "completed",
+}
+
 interface TournamentContextType {
   tournament: Tournament | null
   teams: Team[]
@@ -37,6 +44,7 @@ interface TournamentContextType {
   updateTeam: (teamId: string, updates: Partial<Team>) => Promise<void>
   addPlayer: (player: Omit<Player, "id">) => Promise<void>
   scheduleMatch: (matchData: ScheduleMatchData) => Promise<void>
+  getMatchStatus: (matchDateTime: string) => string
 }
 
 const TournamentContext = createContext<TournamentContextType | undefined>(undefined)
@@ -56,9 +64,127 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [loading, setLoading] = useState(true)
   const [lastRefresh, setLastRefresh] = useState<number>(0)
 
+  // Function to determine match status based on date and time
+  const getMatchStatus = useCallback((matchDateTime: string): string => {
+    const currentTime = new Date()
+    const matchTime = new Date(matchDateTime)
+
+    // Calculate end time (match time + 1.2 hours)
+    const matchEndTime = new Date(matchTime)
+    matchEndTime.setMinutes(matchEndTime.getMinutes() + 72) // 1.2 hours = 72 minutes
+
+    if (currentTime >= matchTime && currentTime < matchEndTime) {
+      return MATCH_STATUS.LIVE
+    } else if (currentTime >= matchEndTime) {
+      return MATCH_STATUS.COMPLETED
+    } else {
+      return MATCH_STATUS.UPCOMING
+    }
+  }, [])
+
+  // Update match statuses based on current time
+  const updateMatchStatuses = useCallback(() => {
+    setMatches((prevMatches) => 
+      prevMatches.map((match) => {
+        // Only process if we have both date and time
+        if (!match.date || !match.time) return match;
+        
+        // Create datetime string by combining date and time
+        const matchDateTime = `${match.date}T${match.time}`
+        const calculatedStatus = getMatchStatus(matchDateTime)
+        
+        // Only update if the calculated status is different from current status
+        // But allow manual override for completed matches
+        if (match.status !== calculatedStatus && match.status !== MATCH_STATUS.COMPLETED) {
+          return { ...match, status: calculatedStatus }
+        }
+        return match
+      })
+    )
+  }, [getMatchStatus])
+
+  const refreshData = useCallback(async (showLoading = true) => {
+  try {
+    if (showLoading) {
+      setLoading(true);
+    }
+
+    // Make sure token is refreshed before making the request
+    await apiService.refreshToken();
+
+    const data = await apiService.getTournamentData();
+    console.log("API Response - Tournament Data:", data);
+    
+    // Ensure team IDs are consistent
+    const processedTeams = (data.teams || []).map(team => ({
+      ...team,
+      id: team._id || team.id, // Ensure id is always set
+      _id: team._id || team.id, // Ensure _id is also always set
+      players: team.players || []
+    }));
+    
+    console.log("Processed Teams:", processedTeams);
+    
+    setTournament(data.tournament);
+    setTeams(processedTeams);
+    
+    // Update match statuses before setting matches
+    const updatedMatches = (data.matches || []).map((match: Match) => {
+      // Ensure reference IDs are valid and consistent
+      const processedMatch = {
+        ...match,
+        id: match._id || match.id, // Ensure id is always set
+        _id: match._id || match.id, // Ensure _id is also always set
+        // Make sure team IDs match the format expected
+        homeTeamId: typeof match.homeTeamId === 'object' && match.homeTeamId !== null ? match.homeTeamId._id : match.homeTeamId,
+        awayTeamId: typeof match.awayTeamId === 'object' && match.awayTeamId !== null ? match.awayTeamId._id : match.awayTeamId
+      };
+      
+      // If match is already marked as completed, respect that status
+      if (match.status === MATCH_STATUS.COMPLETED) {
+        return processedMatch;
+      }
+      
+      // Otherwise calculate status based on date and time
+      if (match.date && match.time) {
+        const matchDateTime = `${match.date}T${match.time}`;
+        const calculatedStatus = getMatchStatus(matchDateTime);
+        return { ...processedMatch, status: calculatedStatus };
+      }
+      
+      return processedMatch;
+    });
+    
+    console.log("Processed Matches:", updatedMatches);
+    
+    setMatches(updatedMatches);
+    setLastRefresh(Date.now());
+  } catch (error) {
+    console.error("Error fetching tournament data:", error);
+    // Initialize with empty data if API fails
+    if (!tournament) {
+      setTournament({
+        id: "default",
+        name: "Football League Championship",
+        startDate: "2024-01-06",
+        endDate: "2024-01-28",
+        currentWeek: 1,
+        status: "ongoing",
+        teams: [],
+        matches: [],
+      });
+    }
+  } finally {
+    if (showLoading) {
+      setLoading(false);
+    }
+  }
+}, [getMatchStatus, tournament]);
+
   // Initial data load
   useEffect(() => {
     refreshData()
+    // Empty dependency array so this only runs once on mount
   }, [])
 
   // Set up periodic refresh (every 30 seconds)
@@ -72,44 +198,21 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }, 30000)
 
     return () => clearInterval(intervalId)
-  }, [lastRefresh])
+  }, [lastRefresh, refreshData])
 
-  const refreshData = async (showLoading = true) => {
-    try {
-      if (showLoading) {
-        setLoading(true)
-      }
-
-      // Make sure token is refreshed before making the request
-      await apiService.refreshToken()
-
-      const data = await apiService.getTournamentData()
-
-      setTournament(data.tournament)
-      setTeams(data.teams || [])
-      setMatches(data.matches || [])
-      setLastRefresh(Date.now())
-    } catch (error) {
-      console.error("Error fetching tournament data:", error)
-      // Initialize with empty data if API fails
-      if (!tournament) {
-        setTournament({
-          id: "default",
-          name: "Football League Championship",
-          startDate: "2024-01-06",
-          endDate: "2024-01-28",
-          currentWeek: 1,
-          status: "ongoing",
-          teams: [],
-          matches: [],
-        })
-      }
-    } finally {
-      if (showLoading) {
-        setLoading(false)
-      }
+  // Set up interval to update match statuses every minute
+  useEffect(() => {
+    // Initial update
+    if (matches.length > 0) {
+      updateMatchStatuses()
     }
-  }
+    
+    const statusUpdateInterval = setInterval(() => {
+      updateMatchStatuses()
+    }, 60000) // Check every minute
+    
+    return () => clearInterval(statusUpdateInterval)
+  }, [matches.length, updateMatchStatuses])
 
   const updateMatch = async (matchId: string, homeScore: number, awayScore: number, events: any[]) => {
     try {
@@ -117,7 +220,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         homeScore,
         awayScore,
         events,
-        status: "completed",
+        status: MATCH_STATUS.COMPLETED,
       })
 
       setMatches((prev) => prev.map((match) => (match.id === matchId ? { ...match, ...updatedMatch } : match)))
@@ -272,29 +375,61 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }
 
   const scheduleMatch = async (matchData: ScheduleMatchData) => {
-    try {
-      const newMatch = await apiService.createMatch({
-        homeTeamId: matchData.homeTeamId,
-        awayTeamId: matchData.awayTeamId,
-        date: matchData.date,
-        time: matchData.time,
-        venue: matchData.venue,
-        week: matchData.week,
-        status: "upcoming",
-        homeScore: 0,
-        awayScore: 0,
-        events: [],
-      })
-
-      setMatches((prev) => [...prev, { ...newMatch, id: newMatch._id }])
-
-      // Refresh data to ensure all clients have the latest
-      refreshData(false)
-    } catch (error) {
-      console.error("Error scheduling match:", error)
-      throw error
+  try {
+    // Add debug logging
+    console.log("Scheduling match with data:", matchData);
+    console.log("Home team ID:", matchData.homeTeamId);
+    console.log("Away team ID:", matchData.awayTeamId);
+    
+    // Find the actual team objects for validation
+    const homeTeam = teams.find(t => t.id === matchData.homeTeamId || t._id === matchData.homeTeamId);
+    const awayTeam = teams.find(t => t.id === matchData.awayTeamId || t._id === matchData.awayTeamId);
+    
+    console.log("Found home team:", homeTeam?.name);
+    console.log("Found away team:", awayTeam?.name);
+    
+    if (!homeTeam || !awayTeam) {
+      throw new Error("One or both teams not found. Please select valid teams.");
     }
+    
+    // Calculate the initial status based on date and time
+    const matchDateTime = `${matchData.date}T${matchData.time}`;
+    const initialStatus = getMatchStatus(matchDateTime);
+    
+    const newMatch = await apiService.createMatch({
+      homeTeamId: matchData.homeTeamId,
+      awayTeamId: matchData.awayTeamId,
+      date: matchData.date,
+      time: matchData.time,
+      venue: matchData.venue,
+      week: matchData.week,
+      status: initialStatus,
+      homeScore: 0,
+      awayScore: 0,
+      events: [],
+    });
+    
+    console.log("API response for new match:", newMatch);
+
+    // Ensure the new match has consistent ID formats
+    const processedNewMatch = {
+      ...newMatch,
+      id: newMatch._id || newMatch.id,
+      _id: newMatch._id || newMatch.id,
+      // Make sure team IDs are consistent
+      homeTeamId: newMatch.homeTeamId?._id || newMatch.homeTeamId,
+      awayTeamId: newMatch.awayTeamId?._id || newMatch.awayTeamId
+    };
+
+    setMatches((prev) => [...prev, processedNewMatch]);
+
+    // Refresh data to ensure all clients have the latest
+    await refreshData(false);
+  } catch (error) {
+    console.error("Error scheduling match:", error);
+    throw error;
   }
+};
 
   // Create tournament object with teams and matches for compatibility
   const tournamentWithData = tournament
@@ -320,6 +455,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         updateTeam,
         addPlayer,
         scheduleMatch,
+        getMatchStatus,
       }}
     >
       {children}

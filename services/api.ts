@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
 
 // API Configuration
-const API_BASE_URL = "http://192.168.29.71:3000/api"
+const API_BASE_URL = "http://172.20.10.2:3000/api"
 
 class ApiService {
   private baseURL: string
@@ -149,8 +149,38 @@ class ApiService {
 
   // Tournament
   async getTournamentData() {
-    return await this.request("/tournament")
+  try {
+    const response = await this.request("/tournament");
+    
+    console.log("API: Tournament data response received");
+    
+    // Process teams to ensure ID consistency
+    if (response.teams) {
+      response.teams = response.teams.map((team: { _id: any; id: any; players: any }) => ({
+        ...team,
+        id: team._id || team.id,
+        _id: team._id || team.id,
+        players: team.players || []
+      }));
+    }
+    
+    // Process matches to ensure ID consistency
+    if (response.matches) {
+      response.matches = response.matches.map((match: { _id: any; id: any; homeTeamId: { _id: any }; awayTeamId: { _id: any } }) => ({
+        ...match,
+        id: match._id || match.id,
+        _id: match._id || match.id,
+        homeTeamId: match.homeTeamId?._id || match.homeTeamId,
+        awayTeamId: match.awayTeamId?._id || match.awayTeamId
+      }));
+    }
+    
+    return response;
+  } catch (error) {
+    console.error("API Error fetching tournament data:", error);
+    throw error;
   }
+}
 
   // Teams
   async getTeams() {
@@ -271,12 +301,36 @@ class ApiService {
     return await this.request("/matches")
   }
 
-  async createMatch(matchData: any) {
-    return await this.request("/matches", {
+async createMatch(matchData: any) {
+  try {
+    console.log("API: Creating match with data:", {
+      ...matchData,
+      // Don't log sensitive data if any
+    });
+    
+    const response = await this.request("/matches", {
       method: "POST",
       body: JSON.stringify(matchData),
-    })
+    });
+    
+    console.log("API: Match creation response:", response);
+    
+    // Process the response to ensure consistency
+    const processedResponse = {
+      ...response,
+      id: response._id || response.id,
+      _id: response._id || response.id,
+      // Make sure team IDs are consistent
+      homeTeamId: response.homeTeamId?._id || response.homeTeamId,
+      awayTeamId: response.awayTeamId?._id || response.awayTeamId
+    };
+    
+    return processedResponse;
+  } catch (error) {
+    console.error("API Error creating match:", error);
+    throw error;
   }
+}
 
   async updateMatch(matchId: string, matchData: any) {
     return await this.request(`/matches/${matchId}`, {

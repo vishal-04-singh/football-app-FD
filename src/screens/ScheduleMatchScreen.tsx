@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   Alert,
   Modal,
+  Image,
 } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 import { useTournament } from "../contexts/TournamentContext";
@@ -18,9 +19,16 @@ import { Ionicons } from "@expo/vector-icons";
 import type { ScheduleMatchData } from "../types";
 import CustomDateTimePicker from "../../components/DateTimePicker";
 
+const MATCH_STATUS = {
+  UPCOMING: "upcoming",
+  LIVE: "live",
+  COMPLETED: "completed",
+};
+
 const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { user } = useAuth();
-  const { tournament, scheduleMatch } = useTournament();
+  const { tournament, scheduleMatch, teams, matches, getMatchStatus } =
+    useTournament();
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [selectedHomeTeam, setSelectedHomeTeam] = useState("");
   const [selectedAwayTeam, setSelectedAwayTeam] = useState("");
@@ -38,27 +46,6 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     // Format date as YYYY-MM-DD
     const formattedDate = selectedDate.toISOString().split("T")[0];
     setMatchDate(formattedDate);
-  };
-  const MATCH_STATUS = {
-    UPCOMING: "upcoming",
-    LIVE: "live",
-    COMPLETED: "completed",
-  };
-  const getMatchStatus = (matchDateTime: string | number | Date) => {
-    const currentTime = new Date();
-    const matchTime = new Date(matchDateTime);
-
-    // Calculate end time (match time + 1.2 hours)
-    const matchEndTime = new Date(matchTime);
-    matchEndTime.setMinutes(matchEndTime.getMinutes() + 72); // 1.2 hours = 72 minutes
-
-    if (currentTime >= matchTime && currentTime < matchEndTime) {
-      return MATCH_STATUS.LIVE;
-    } else if (currentTime >= matchEndTime) {
-      return MATCH_STATUS.COMPLETED;
-    } else {
-      return MATCH_STATUS.UPCOMING;
-    }
   };
 
   const handleTimeChange = (selectedTime: Date) => {
@@ -107,15 +94,46 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     Alert.alert("Success", "Match scheduled successfully!");
   };
 
-  const getTeamName = (teamId: string) => {
-    return (
-      tournament?.teams.find((team) => team.id === teamId)?.name ||
-      "Unknown Team"
+  const getTeamInfo = (teamId: string) => {
+    // Check for various ID formats (_id or id)
+    const team = teams.find(
+      (t) =>
+        t.id === teamId ||
+        t._id === teamId ||
+        String(t.id) === String(teamId) ||
+        String(t._id) === String(teamId)
     );
+
+    if (!team) {
+      console.log(`Team not found for ID: ${teamId}`);
+      return {
+        name: "Unknown Team",
+        logo: null,
+      };
+    }
+
+    return {
+      name: team.name,
+      logo: team.logo,
+    };
   };
 
-  const upcomingMatches =
-    tournament?.matches.filter((match) => match.status === "upcoming") || [];
+  // Add debugging to see the actual team data
+  useEffect(() => {
+    console.log("Available teams:", teams);
+    console.log("Match data:", matches);
+  }, [teams, matches]);
+
+  // Group matches by status
+  const liveMatches = matches.filter(
+    (match) => match.status === MATCH_STATUS.LIVE
+  );
+  const upcomingMatches = matches.filter(
+    (match) => match.status === MATCH_STATUS.UPCOMING
+  );
+  const completedMatches = matches.filter(
+    (match) => match.status === MATCH_STATUS.COMPLETED
+  );
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
@@ -132,7 +150,102 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     navigation.navigate("MatchFixture", { matchId });
   };
 
+  const getStatusBadgeStyle = (status: string) => {
+    switch (status) {
+      case MATCH_STATUS.LIVE:
+        return styles.liveBadge;
+      case MATCH_STATUS.COMPLETED:
+        return styles.completedBadge;
+      default:
+        return styles.upcomingBadge;
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case MATCH_STATUS.LIVE:
+        return "LIVE";
+      case MATCH_STATUS.COMPLETED:
+        return "COMPLETED";
+      default:
+        return "UPCOMING";
+    }
+  };
+
+  const renderMatchCard = (match: { id: React.Key | null | undefined; homeTeamId: string; awayTeamId: string; week: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; status: string; date: string; time: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; venue: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; }) => {
+  // Debug the team IDs
+  console.log(`Rendering match ${match.id}: Home=${match.homeTeamId}, Away=${match.awayTeamId}`);
   
+  const homeTeam = getTeamInfo(match.homeTeamId);
+  const awayTeam = getTeamInfo(match.awayTeamId);
+  
+  // Debug the retrieved team info
+  console.log(`Home team: ${JSON.stringify(homeTeam)}`);
+  console.log(`Away team: ${JSON.stringify(awayTeam)}`);
+
+  return (
+    <TouchableOpacity 
+      key={match.id} 
+      style={styles.matchCard}
+      onPress={() => match.id && navigateToMatchFixture(String(match.id))}
+    >
+      <View style={styles.matchHeader}>
+        <Text style={styles.weekBadge}>Week {match.week}</Text>
+        <View style={[styles.statusBadge, getStatusBadgeStyle(match.status)]}>
+          <Text style={styles.statusBadgeText}>{getStatusText(match.status)}</Text>
+        </View>
+      </View>
+      <Text style={styles.matchDate}>{formatDate(match.date)}</Text>
+      <View style={styles.matchTeams}>
+        <View style={styles.teamContainer}>
+          {homeTeam.logo ? (
+            <Image 
+              source={{ uri: homeTeam.logo }} 
+              style={styles.teamLogo}
+              onError={(e) => {
+                console.log("Error loading home team logo:", e.nativeEvent.error);
+              }}
+            />
+          ) : (
+            <View style={styles.teamLogoPlaceholder}>
+              <Text style={styles.teamLogoPlaceholderText}>
+                {(homeTeam.name && homeTeam.name !== "Unknown Team") 
+                  ? homeTeam.name.charAt(0) 
+                  : "U"}
+              </Text>
+            </View>
+          )}
+          <Text style={styles.teamName}>{homeTeam.name}</Text>
+        </View>
+        <Text style={styles.vs}>VS</Text>
+        <View style={styles.teamContainer}>
+          {awayTeam.logo ? (
+            <Image 
+              source={{ uri: awayTeam.logo }} 
+              style={styles.teamLogo}
+              onError={(e) => {
+                console.log("Error loading away team logo:", e.nativeEvent.error);
+              }}
+            />
+          ) : (
+            <View style={styles.teamLogoPlaceholder}>
+              <Text style={styles.teamLogoPlaceholderText}>
+                {(awayTeam.name && awayTeam.name !== "Unknown Team") 
+                  ? awayTeam.name.charAt(0) 
+                  : "U"}
+              </Text>
+            </View>
+          )}
+          <Text style={styles.teamName}>{awayTeam.name}</Text>
+        </View>
+      </View>
+      <View style={styles.matchDetails}>
+        <Text style={styles.matchTime}>🕐 {match.time}</Text>
+        <Text style={styles.matchVenue}>📍 {match.venue}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+};
 
   return (
     <View style={styles.container}>
@@ -144,12 +257,14 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Schedule Matches</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={() => setShowScheduleModal(true)}
-        >
-          <Ionicons name="add" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
+        {user?.role === "management" && (
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => setShowScheduleModal(true)}
+          >
+            <Ionicons name="add" size={24} color={COLORS.primary} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView style={styles.content}>
@@ -162,6 +277,17 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </Text>
         </View>
 
+        {/* Live Matches Section */}
+        {liveMatches.length > 0 && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, styles.liveTitle]}>
+              Live Matches ({liveMatches.length})
+            </Text>
+            {liveMatches.map(renderMatchCard)}
+          </View>
+        )}
+
+        {/* Upcoming Matches Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
             Upcoming Matches ({upcomingMatches.length})
@@ -169,35 +295,27 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           {upcomingMatches.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="calendar-outline" size={60} color={COLORS.gray} />
-              <Text style={styles.emptyText}>No matches scheduled yet</Text>
-              <Text style={styles.emptySubtext}>
-                Tap the + button to schedule a match
-              </Text>
+              <Text style={styles.emptyText}>No upcoming matches</Text>
+              {user?.role === "management" && (
+                <Text style={styles.emptySubtext}>
+                  Tap the + button to schedule a match
+                </Text>
+              )}
             </View>
           ) : (
-            upcomingMatches.map((match) => (
-              <View key={match.id} style={styles.matchCard}>
-                <View style={styles.matchHeader}>
-                  <Text style={styles.weekBadge}>Week {match.week}</Text>
-                  <Text style={styles.matchDate}>{formatDate(match.date)}</Text>
-                </View>
-                <View style={styles.matchTeams}>
-                  <Text style={styles.teamName}>
-                    {getTeamName(match.homeTeamId)}
-                  </Text>
-                  <Text style={styles.vs}>VS</Text>
-                  <Text style={styles.teamName}>
-                    {getTeamName(match.awayTeamId)}
-                  </Text>
-                </View>
-                <View style={styles.matchDetails}>
-                  <Text style={styles.matchTime}>🕐 {match.time}</Text>
-                  <Text style={styles.matchVenue}>📍 {match.venue}</Text>
-                </View>
-              </View>
-            ))
+            upcomingMatches.map(renderMatchCard)
           )}
         </View>
+
+        {/* Completed Matches Section */}
+        {completedMatches.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Completed Matches ({completedMatches.length})
+            </Text>
+            {completedMatches.map(renderMatchCard)}
+          </View>
+        )}
       </ScrollView>
 
       {/* Schedule Match Modal */}
@@ -239,13 +357,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               </View>
 
               <View style={styles.teamSelection}>
-                <Text style={styles.inputLabel}>A Team:</Text>
+                <Text style={styles.inputLabel}>Home Team:</Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   style={styles.teamPicker}
                 >
-                  {tournament?.teams.map((team) => (
+                  {teams.map((team) => (
                     <TouchableOpacity
                       key={team.id}
                       style={[
@@ -255,6 +373,18 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       ]}
                       onPress={() => setSelectedHomeTeam(team.id)}
                     >
+                      {team.logo ? (
+                        <Image
+                          source={{ uri: team.logo }}
+                          style={styles.teamPickerLogo}
+                        />
+                      ) : (
+                        <View style={styles.teamPickerLogoPlaceholder}>
+                          <Text style={styles.teamPickerLogoPlaceholderText}>
+                            {team.name.charAt(0)}
+                          </Text>
+                        </View>
+                      )}
                       <Text
                         style={[
                           styles.teamPickerText,
@@ -270,13 +400,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               </View>
 
               <View style={styles.teamSelection}>
-                <Text style={styles.inputLabel}>B Team:</Text>
+                <Text style={styles.inputLabel}>Away Team:</Text>
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   style={styles.teamPicker}
                 >
-                  {tournament?.teams.map((team) => (
+                  {teams.map((team) => (
                     <TouchableOpacity
                       key={team.id}
                       style={[
@@ -286,6 +416,18 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       ]}
                       onPress={() => setSelectedAwayTeam(team.id)}
                     >
+                      {team.logo ? (
+                        <Image
+                          source={{ uri: team.logo }}
+                          style={styles.teamPickerLogo}
+                        />
+                      ) : (
+                        <View style={styles.teamPickerLogoPlaceholder}>
+                          <Text style={styles.teamPickerLogoPlaceholderText}>
+                            {team.name.charAt(0)}
+                          </Text>
+                        </View>
+                      )}
                       <Text
                         style={[
                           styles.teamPickerText,
@@ -321,7 +463,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               </View>
 
               <View style={styles.dateTimeSection}>
-                <Text style={styles.inputLabel}>Venue(Fixed )</Text>
+                <Text style={styles.inputLabel}>Venue (Fixed)</Text>
                 <View style={styles.venueContainer}>
                   <Text style={styles.venueText}>Football Arena</Text>
                   <Ionicons name="location" size={20} color={COLORS.primary} />
@@ -407,6 +549,9 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginBottom: 15,
   },
+  liveTitle: {
+    color: "#ff4500", // Bright orange for live matches
+  },
   emptyState: {
     alignItems: "center",
     padding: 40,
@@ -433,7 +578,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 15,
+    marginBottom: 10,
   },
   weekBadge: {
     backgroundColor: COLORS.primary,
@@ -444,9 +589,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "bold",
   },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+  },
+  upcomingBadge: {
+    backgroundColor: COLORS.primary,
+  },
+  liveBadge: {
+    backgroundColor: "#ff4500", // Bright orange for live
+  },
+  completedBadge: {
+    backgroundColor: "#4CAF50", // Green for completed
+  },
+  statusBadgeText: {
+    color: COLORS.black,
+    fontSize: 12,
+    fontWeight: "bold",
+  },
   matchDate: {
     color: COLORS.gray,
     fontSize: 14,
+    marginBottom: 10,
   },
   matchTeams: {
     flexDirection: "row",
@@ -454,11 +619,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 15,
   },
+  teamContainer: {
+    flex: 1,
+    alignItems: "center",
+  },
+  teamLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginBottom: 5,
+  },
+  teamLogoPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 5,
+  },
+  teamLogoPlaceholderText: {
+    color: COLORS.black,
+    fontSize: 18,
+    fontWeight: "bold",
+  },
   teamName: {
     color: COLORS.white,
     fontSize: 16,
     fontWeight: "bold",
-    flex: 1,
     textAlign: "center",
   },
   vs: {
@@ -544,6 +732,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     paddingVertical: 8,
     marginRight: 10,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  teamPickerLogo: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    marginRight: 5,
+  },
+  teamPickerLogoPlaceholder: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: COLORS.gray,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 5,
+  },
+  teamPickerLogoPlaceholderText: {
+    color: COLORS.black,
+    fontSize: 10,
+    fontWeight: "bold",
   },
   selectedTeamPickerItem: {
     backgroundColor: COLORS.primary,
