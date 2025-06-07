@@ -13,7 +13,7 @@ import PointsTableScreen from "./src/screens/PointsTableScreen"
 import LiveMatchScreen from "./src/screens/LiveMatchScreen"
 import ManagementScreen from "./src/screens/ManagementScreen"
 import ScheduleMatchScreen from "./src/screens/ScheduleMatchScreen"
-import MatchFixtureScreen from "./src/screens/MatchFixtureScreen"
+// import MatchFixtureScreen from "./src/screens/MatchFixtureScreen"
 import SignupScreen from "./src/screens/SignupScreen"
 import LoadingSpinner from "./components/LoadingSpinner"
 import ErrorBoundary from "./components/ErrorBoundary"
@@ -104,7 +104,7 @@ function AppNavigator() {
           <Stack.Screen name="Main" component={TabNavigator} options={{ headerShown: false }} />
           <Stack.Screen name="LiveMatch" component={LiveMatchScreen} options={{ title: "Live Match" }} />
           <Stack.Screen name="ScheduleMatch" component={ScheduleMatchScreen} options={{ headerShown: false }} />
-          <Stack.Screen name="MatchFixture" component={MatchFixtureScreen} options={{ headerShown: false }} />
+          {/* <Stack.Screen name="MatchFixture" component={MatchFixtureScreen} options={{ headerShown: false }} /> */}
         </>
       ) : (
         <>

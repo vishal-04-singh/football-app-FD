@@ -427,14 +427,14 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
             <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
           </TouchableOpacity> */}
 
-          <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate("Main", { screen: "Teams" })}>
+          {/* <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate("Main", { screen: "Teams" })}>
             <Ionicons name="create-outline" size={24} color={COLORS.blue} />
             <View style={styles.actionContent}>
               <Text style={styles.actionTitle}>Edit Teams & Players</Text>
               <Text style={styles.actionSubtitle}>Modify existing teams and player information</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           <View style={styles.statsCard}>
             <Text style={styles.statsTitle}>Tournament Statistics</Text>

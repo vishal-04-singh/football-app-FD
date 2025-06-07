@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState } from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList } from "react-native"
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, FlatList, Image } from "react-native"
 import { useTournament } from "../contexts/TournamentContext"
 import { useAuth } from "../contexts/AuthContext"
 import { COLORS } from "../constants/colors"
@@ -20,8 +20,22 @@ const MatchesScreen: React.FC = () => {
     return tournament?.matches.filter((match) => match.week === week) || []
   }
 
-  const getTeamName = (teamId: string) => {
-    return tournament?.teams.find((team) => team.id === teamId)?.name || "Unknown Team"
+  const getTeamInfo = (teamId: string) => {
+    const team = tournament?.teams.find((team) => 
+      team.id === teamId || 
+      team._id === teamId || 
+      String(team.id) === String(teamId) || 
+      String(team._id) === String(teamId)
+    );
+    
+    if (!team) {
+      return { name: "Unknown Team", logo: null };
+    }
+    
+    return {
+      name: team.name,
+      logo: team.logo,
+    };
   }
 
   const getStatusColor = (status: string) => {
@@ -46,63 +60,97 @@ const MatchesScreen: React.FC = () => {
     }
   }
 
-  const renderMatch = ({ item: match }: { item: Match }) => (
-    <TouchableOpacity style={styles.matchCard}>
-      <View style={styles.matchHeader}>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(match.status) }]}>
-          <Text style={styles.statusText}>{getStatusText(match.status)}</Text>
-        </View>
-        <Text style={styles.matchDate}>{match.date}</Text>
-      </View>
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric"
+    });
+  }
 
-      <View style={styles.matchContent}>
-        <View style={styles.teamSection}>
-          <Text style={styles.teamName}>{getTeamName(match.homeTeamId)}</Text>
-          <Text style={styles.teamLabel}>HOME</Text>
+  const renderMatch = ({ item: match }: { item: Match }) => {
+    const homeTeam = getTeamInfo(match.homeTeamId);
+    const awayTeam = getTeamInfo(match.awayTeamId);
+    
+    return (
+      <TouchableOpacity style={styles.matchCard}>
+        <View style={styles.matchHeader}>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(match.status) }]}>
+            <Text style={styles.statusText}>{getStatusText(match.status)}</Text>
+          </View>
+          <Text style={styles.matchDate}>{formatDate(match.date)}</Text>
         </View>
 
-        <View style={styles.scoreSection}>
-          {match.status === "completed" || match.status === "live" ? (
-            <View style={styles.scoreContainer}>
-              <Text style={styles.score}>{match.homeScore}</Text>
-              <Text style={styles.scoreSeparator}>-</Text>
-              <Text style={styles.score}>{match.awayScore}</Text>
-            </View>
-          ) : (
-            <View style={styles.timeContainer}>
-              <Text style={styles.matchTime}>{match.time}</Text>
-            </View>
+        <View style={styles.matchContent}>
+          <View style={styles.teamSection}>
+            {homeTeam.logo ? (
+              <Image source={{ uri: homeTeam.logo }} style={styles.teamLogo} />
+            ) : (
+              <View style={styles.teamLogoPlaceholder}>
+                <Text style={styles.teamLogoPlaceholderText}>
+                  {homeTeam.name.charAt(0)}
+                </Text>
+              </View>
+            )}
+            <Text style={styles.teamName}>{homeTeam.name}</Text>
+            <Text style={styles.teamLabel}>HOME</Text>
+          </View>
+
+          <View style={styles.scoreSection}>
+            {match.status === "completed" || match.status === "live" ? (
+              <View style={styles.scoreContainer}>
+                <Text style={styles.score}>{match.homeScore}</Text>
+                <Text style={styles.scoreSeparator}>-</Text>
+                <Text style={styles.score}>{match.awayScore}</Text>
+              </View>
+            ) : (
+              <View style={styles.timeContainer}>
+                <Text style={styles.matchTime}>{match.time}</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.teamSection}>
+            {awayTeam.logo ? (
+              <Image source={{ uri: awayTeam.logo }} style={styles.teamLogo} />
+            ) : (
+              <View style={styles.teamLogoPlaceholder}>
+                <Text style={styles.teamLogoPlaceholderText}>
+                  {awayTeam.name.charAt(0)}
+                </Text>
+              </View>
+            )}
+            <Text style={styles.teamName}>{awayTeam.name}</Text>
+            <Text style={styles.teamLabel}>AWAY</Text>
+          </View>
+        </View>
+
+        <View style={styles.matchFooter}>
+          <Text style={styles.venue}>📍 {match.venue}</Text>
+          {match.status === "live" && (
+            <TouchableOpacity style={styles.liveButton}>
+              <Ionicons name="play-circle" size={16} color={COLORS.white} />
+              <Text style={styles.liveButtonText}>Watch Live</Text>
+            </TouchableOpacity>
           )}
         </View>
 
-        <View style={styles.teamSection}>
-          <Text style={styles.teamName}>{getTeamName(match.awayTeamId)}</Text>
-          <Text style={styles.teamLabel}>AWAY</Text>
-        </View>
-      </View>
-
-      <View style={styles.matchFooter}>
-        <Text style={styles.venue}>📍 {match.venue}</Text>
-        {match.status === "live" && (
-          <TouchableOpacity style={styles.liveButton}>
-            <Ionicons name="play-circle" size={16} color={COLORS.white} />
-            <Text style={styles.liveButtonText}>Watch Live</Text>
-          </TouchableOpacity>
+        {match.events && match.events.length > 0 && (
+          <View style={styles.eventsSection}>
+            <Text style={styles.eventsTitle}>Match Events:</Text>
+            {match.events.slice(0, 3).map((event, index) => (
+              <Text key={index} style={styles.eventText}>
+                {event.minute}' - {event.playerName} ({event.type.replace("_", " ")})
+              </Text>
+            ))}
+          </View>
         )}
-      </View>
-
-      {match.events.length > 0 && (
-        <View style={styles.eventsSection}>
-          <Text style={styles.eventsTitle}>Match Events:</Text>
-          {match.events.slice(0, 3).map((event, index) => (
-            <Text key={index} style={styles.eventText}>
-              {event.minute}' - {event.playerName} ({event.type.replace("_", " ")})
-            </Text>
-          ))}
-        </View>
-      )}
-    </TouchableOpacity>
-  )
+      </TouchableOpacity>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -126,9 +174,15 @@ const MatchesScreen: React.FC = () => {
       <FlatList
         data={getMatchesForWeek(selectedWeek)}
         renderItem={renderMatch}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.id || item._id || String(Math.random())}
         contentContainerStyle={styles.matchesList}
         showsVerticalScrollIndicator={false}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Ionicons name="calendar-outline" size={60} color={COLORS.gray} />
+            <Text style={styles.emptyText}>No matches scheduled for Week {selectedWeek}</Text>
+          </View>
+        }
       />
 
       {selectedWeek === 4 && (
@@ -182,6 +236,19 @@ const styles = StyleSheet.create({
   },
   matchesList: {
     padding: 20,
+    flexGrow: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 40,
+  },
+  emptyText: {
+    color: COLORS.gray,
+    fontSize: 16,
+    marginTop: 15,
+    textAlign: "center",
   },
   matchCard: {
     backgroundColor: COLORS.background,
@@ -220,6 +287,26 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
   },
+  teamLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginBottom: 8,
+  },
+  teamLogoPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  teamLogoPlaceholderText: {
+    color: COLORS.black,
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
   teamName: {
     color: COLORS.white,
     fontSize: 16,
@@ -233,7 +320,7 @@ const styles = StyleSheet.create({
   },
   scoreSection: {
     alignItems: "center",
-    marginHorizontal: 20,
+    marginHorizontal: 10,
   },
   scoreContainer: {
     flexDirection: "row",

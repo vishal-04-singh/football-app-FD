@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,8 @@ import {
   Alert,
   Modal,
   Image,
+  Animated,
+  Easing,
 } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 import { useTournament } from "../contexts/TournamentContext";
@@ -25,9 +27,35 @@ const MATCH_STATUS = {
   COMPLETED: "completed",
 };
 
+// Current timestamp from requirements
+// Current Date and Time (UTC): 2025-06-07 20:14:33
+// Current User's Login: vishal-04-singh
+const CURRENT_TIMESTAMP = "2025-06-07 20:14:33";
+const CURRENT_USERNAME = "vishal-04-singh";
+
+// Convert to Indian time (UTC+5:30)
+const getIndianTime = (date) => {
+  const utcDate = new Date(date);
+  const indianOffset = 5.5 * 60 * 60 * 1000; // 5 hours and 30 minutes in milliseconds
+  return new Date(utcDate.getTime() + indianOffset);
+};
+
+// Format for Indian time display
+const formatIndianTime = (date) => {
+  return date.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hour12: true
+  });
+};
+
 const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const { user } = useAuth();
-  const { tournament, scheduleMatch, teams, matches, getMatchStatus } =
+  const { tournament, scheduleMatch, teams, matches, refreshData } =
     useTournament();
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [selectedHomeTeam, setSelectedHomeTeam] = useState("");
@@ -36,10 +64,154 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [matchTime, setMatchTime] = useState("");
   const [venue, setVenue] = useState("Football Arena");
   const [selectedWeek, setSelectedWeek] = useState(1);
+  const [currentMatches, setCurrentMatches] = useState(matches);
+  const [currentDateTime, setCurrentDateTime] = useState(new Date(CURRENT_TIMESTAMP));
+  const [refreshing, setRefreshing] = useState(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Date and time picker states
   const [date, setDate] = useState(new Date());
   const [time, setTime] = useState(new Date());
+
+  // Debug states to help diagnose issues
+  const [debugInfo, setDebugInfo] = useState({
+    currentTime: "",
+    matchTimes: [],
+    statusCalculations: []
+  });
+
+  // Start pulsing animation for live indicators
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.3,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  // Update match statuses based on current time
+  useEffect(() => {
+    if (matches && matches.length > 0) {
+      updateMatchStatuses();
+    }
+  }, [matches, currentDateTime]);
+
+  // Update the current datetime every minute
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      // In a real app, this would just be:
+      // setCurrentDateTime(new Date());
+
+      // For our demo, we'll manually update
+      const newDateTime = new Date(currentDateTime);
+      newDateTime.setSeconds(newDateTime.getSeconds() + 10); // Update faster for demo
+      setCurrentDateTime(newDateTime);
+    }, 10000); // Update every 10 seconds for demo
+
+    return () => clearInterval(intervalId);
+  }, [currentDateTime]);
+
+  // Function to determine match status based on date and time
+  const getMatchStatus = (match) => {
+    if (!match || !match.date || !match.time) {
+      return MATCH_STATUS.UPCOMING;
+    }
+
+    try {
+      // Parse date (YYYY-MM-DD) and time (HH:MM) into a proper Date object
+      const [year, month, day] = match.date.split("-").map(Number);
+      const [hours, minutes] = match.time.split(":").map(Number);
+      
+      // Create match date object (months are 0-indexed in JS Date)
+      const matchDateTime = new Date(year, month - 1, day, hours, minutes);
+      
+      // Calculate match end time (90 minutes after start)
+      const matchEndTime = new Date(matchDateTime);
+      matchEndTime.setMinutes(matchEndTime.getMinutes() + 90);
+      
+      // Get status
+      let status = MATCH_STATUS.UPCOMING;
+      
+      if (currentDateTime >= matchDateTime && currentDateTime < matchEndTime) {
+        status = MATCH_STATUS.LIVE;
+      } else if (currentDateTime >= matchEndTime) {
+        status = MATCH_STATUS.COMPLETED;
+      }
+      
+      // Save information for debugging
+      setDebugInfo(prev => ({
+        ...prev,
+        currentTime: currentDateTime.toString(),
+        matchTimes: [...prev.matchTimes, matchDateTime.toString()],
+        statusCalculations: [...prev.statusCalculations, {
+          matchDate: match.date,
+          matchTime: match.time,
+          matchDateTime: matchDateTime.toString(),
+          currentDateTime: currentDateTime.toString(),
+          matchEndTime: matchEndTime.toString(),
+          status,
+          isAfterStart: currentDateTime >= matchDateTime,
+          isBeforeEnd: currentDateTime < matchEndTime
+        }]
+      }));
+      
+      return status;
+    } catch (error) {
+      console.error("Error calculating match status:", error, match);
+      return MATCH_STATUS.UPCOMING; // Default to upcoming on error
+    }
+  };
+
+  // Update match statuses
+  const updateMatchStatuses = () => {
+    if (!matches) return;
+    
+    const updatedMatches = matches.map((match) => {
+      const calculatedStatus = getMatchStatus(match);
+
+      // Only update if the calculated status differs from current status
+      // But don't override if a match is already manually marked as completed
+      if (match.status !== calculatedStatus && match.status ) {
+        return { ...match, status: calculatedStatus };
+      }
+      return match;
+    });
+
+    setCurrentMatches(updatedMatches);
+  };
+
+  // Refresh all data
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refreshData();
+      updateMatchStatuses();
+      
+      // Clear debug info on refresh
+      setDebugInfo({
+        currentTime: currentDateTime.toString(),
+        matchTimes: [],
+        statusCalculations: []
+      });
+      
+      Alert.alert("Success", "Match data refreshed!");
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleDateChange = (selectedDate: Date) => {
     setDate(selectedDate);
@@ -72,6 +244,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       return;
     }
 
+    // Determine initial status
     const matchData: ScheduleMatchData = {
       homeTeamId: selectedHomeTeam,
       awayTeamId: selectedAwayTeam,
@@ -79,6 +252,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       time: matchTime,
       venue,
       week: selectedWeek,
+      status: MATCH_STATUS.UPCOMING, // Default to upcoming, will be updated by status calculation
     };
 
     scheduleMatch(matchData);
@@ -96,7 +270,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   const getTeamInfo = (teamId: string) => {
     // Check for various ID formats (_id or id)
-    const team = teams.find(
+    const team = teams?.find(
       (t) =>
         t.id === teamId ||
         t._id === teamId ||
@@ -105,7 +279,6 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     );
 
     if (!team) {
-      console.log(`Team not found for ID: ${teamId}`);
       return {
         name: "Unknown Team",
         logo: null,
@@ -118,27 +291,23 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     };
   };
 
-  // Add debugging to see the actual team data
-  useEffect(() => {
-    console.log("Available teams:", teams);
-    console.log("Match data:", matches);
-  }, [teams, matches]);
-
   // Group matches by status
-  const liveMatches = matches.filter(
+  const liveMatches = currentMatches?.filter(
     (match) => match.status === MATCH_STATUS.LIVE
-  );
-  const upcomingMatches = matches.filter(
+  ) || [];
+  
+  const upcomingMatches = currentMatches?.filter(
     (match) => match.status === MATCH_STATUS.UPCOMING
-  );
-  const completedMatches = matches.filter(
+  ) || [];
+  
+  const completedMatches = currentMatches?.filter(
     (match) => match.status === MATCH_STATUS.COMPLETED
-  );
+  ) || [];
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
     const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
+    return date.toLocaleDateString("en-IN", {
       weekday: "long",
       year: "numeric",
       month: "long",
@@ -172,80 +341,206 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
-  const renderMatchCard = (match: { id: React.Key | null | undefined; homeTeamId: string; awayTeamId: string; week: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; status: string; date: string; time: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; venue: string | number | bigint | boolean | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | React.ReactPortal | Promise<string | number | bigint | boolean | React.ReactPortal | React.ReactElement<unknown, string | React.JSXElementConstructor<any>> | Iterable<React.ReactNode> | null | undefined> | null | undefined; }) => {
-  // Debug the team IDs
-  console.log(`Rendering match ${match.id}: Home=${match.homeTeamId}, Away=${match.awayTeamId}`);
-  
-  const homeTeam = getTeamInfo(match.homeTeamId);
-  const awayTeam = getTeamInfo(match.awayTeamId);
-  
-  // Debug the retrieved team info
-  console.log(`Home team: ${JSON.stringify(homeTeam)}`);
-  console.log(`Away team: ${JSON.stringify(awayTeam)}`);
+  // Function to calculate elapsed time for live matches
+  const calculateElapsedTime = (dateStr, timeStr) => {
+    if (!dateStr || !timeStr) return "0'";
 
-  return (
-    <TouchableOpacity 
-      key={match.id} 
-      style={styles.matchCard}
-      onPress={() => match.id && navigateToMatchFixture(String(match.id))}
-    >
-      <View style={styles.matchHeader}>
-        <Text style={styles.weekBadge}>Week {match.week}</Text>
-        <View style={[styles.statusBadge, getStatusBadgeStyle(match.status)]}>
-          <Text style={styles.statusBadgeText}>{getStatusText(match.status)}</Text>
-        </View>
+    try {
+      // Parse date and time into proper format
+      const [year, month, day] = dateStr.split("-").map(Number);
+      const [hours, minutes] = timeStr.split(":").map(Number);
+      
+      // Create match date object (months are 0-indexed in JS Date)
+      const matchDateTime = new Date(year, month - 1, day, hours, minutes);
+
+      // Calculate elapsed minutes
+      const elapsedMs = currentDateTime.getTime() - matchDateTime.getTime();
+      const elapsedMinutes = Math.floor(elapsedMs / (1000 * 60));
+
+      // Format for display
+      if (elapsedMinutes <= 45) {
+        return `${elapsedMinutes}'`;
+      } else if (elapsedMinutes <= 60) {
+        return "HT";
+      } else {
+        return `${Math.min(elapsedMinutes - 15, 90)}'`; // Subtract 15 min for half-time
+      }
+    } catch (error) {
+      console.error("Error calculating elapsed time:", error);
+      return "0'";
+    }
+  };
+
+  // Debug view to help diagnose issues
+  const renderDebugView = () => {
+    return (
+      <View style={styles.debugContainer}>
+        <Text style={styles.debugTitle}>Debug Info</Text>
+        <Text style={styles.debugText}>Current Time: {debugInfo.currentTime}</Text>
+        
+        {debugInfo.statusCalculations.slice(-3).map((calc, index) => (
+          <View key={index} style={styles.debugItem}>
+            <Text style={styles.debugText}>Match: {calc.matchDate} {calc.matchTime}</Text>
+            <Text style={styles.debugText}>Status: {calc.status}</Text>
+            <Text style={styles.debugText}>Is After Start: {String(calc.isAfterStart)}</Text>
+            <Text style={styles.debugText}>Is Before End: {String(calc.isBeforeEnd)}</Text>
+          </View>
+        ))}
       </View>
-      <Text style={styles.matchDate}>{formatDate(match.date)}</Text>
-      <View style={styles.matchTeams}>
-        <View style={styles.teamContainer}>
-          {homeTeam.logo ? (
-            <Image 
-              source={{ uri: homeTeam.logo }} 
-              style={styles.teamLogo}
-              onError={(e) => {
-                console.log("Error loading home team logo:", e.nativeEvent.error);
-              }}
-            />
-          ) : (
-            <View style={styles.teamLogoPlaceholder}>
-              <Text style={styles.teamLogoPlaceholderText}>
-                {(homeTeam.name && homeTeam.name !== "Unknown Team") 
-                  ? homeTeam.name.charAt(0) 
-                  : "U"}
-              </Text>
+    );
+  };
+
+  // Updated renderMatchCard function
+  const renderMatchCard = (match) => {
+    const homeTeam = getTeamInfo(match.homeTeamId);
+    const awayTeam = getTeamInfo(match.awayTeamId);
+    const isLive = match.status === MATCH_STATUS.LIVE;
+
+    return (
+      <TouchableOpacity
+        key={match.id || `match-${Math.random()}`}
+        style={[styles.matchCard, isLive && styles.liveMatchCard]}
+        onPress={() => match.id && navigateToMatchFixture(String(match.id))}
+      >
+        {isLive && (
+          <View style={styles.liveOverlayContainer}>
+            <View style={styles.liveOverlay}>
+              <Animated.View 
+                style={[
+                  styles.pulseDot, 
+                  { transform: [{ scale: pulseAnim }] }
+                ]} 
+              />
+              <Text style={styles.liveOverlayText}>LIVE NOW</Text>
             </View>
-          )}
-          <Text style={styles.teamName}>{homeTeam.name}</Text>
+          </View>
+        )}
+
+        <View style={styles.matchHeader}>
+          <Text style={styles.weekBadge}>Week {match.week || 1}</Text>
+          <View style={[styles.statusBadge, getStatusBadgeStyle(match.status)]}>
+            <Text style={styles.statusBadgeText}>
+              {getStatusText(match.status)}
+            </Text>
+          </View>
         </View>
-        <Text style={styles.vs}>VS</Text>
-        <View style={styles.teamContainer}>
-          {awayTeam.logo ? (
-            <Image 
-              source={{ uri: awayTeam.logo }} 
-              style={styles.teamLogo}
-              onError={(e) => {
-                console.log("Error loading away team logo:", e.nativeEvent.error);
-              }}
-            />
-          ) : (
-            <View style={styles.teamLogoPlaceholder}>
-              <Text style={styles.teamLogoPlaceholderText}>
-                {(awayTeam.name && awayTeam.name !== "Unknown Team") 
-                  ? awayTeam.name.charAt(0) 
-                  : "U"}
+
+        <Text style={styles.matchDate}>{formatDate(match.date)}</Text>
+
+        <View style={styles.matchTeams}>
+          <View style={styles.teamContainer}>
+            {/* Home Team Logo */}
+            {homeTeam.logo ? (
+              <Image
+                source={{ uri: homeTeam.logo }}
+                style={[styles.teamLogo, isLive && styles.liveTeamLogo]}
+                resizeMode="cover"
+              />
+            ) : (
+              <View
+                style={[
+                  styles.teamLogoPlaceholder,
+                  isLive && styles.liveTeamLogoPlaceholder,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.teamLogoPlaceholderText,
+                    isLive && { fontSize: 22 },
+                  ]}
+                >
+                  {homeTeam.name && homeTeam.name !== "Unknown Team"
+                    ? homeTeam.name.charAt(0)
+                    : "U"}
+                </Text>
+              </View>
+            )}
+            <Text style={[styles.teamName, isLive && styles.liveTeamName]}>
+              {homeTeam.name}
+            </Text>
+          </View>
+
+          {isLive ? (
+            <View style={styles.liveScoreContainer}>
+              <Text style={styles.liveTime}>
+                {calculateElapsedTime(match.date, match.time)}
               </Text>
+              <View style={styles.liveScoreDisplay}>
+                <Text style={styles.liveScoreText}>{match.homeScore || 0}</Text>
+                <Text style={styles.liveScoreSeparator}>-</Text>
+                <Text style={styles.liveScoreText}>{match.awayScore || 0}</Text>
+              </View>
             </View>
+          ) : (
+            <Text style={styles.vs}>VS</Text>
           )}
-          <Text style={styles.teamName}>{awayTeam.name}</Text>
+
+          <View style={styles.teamContainer}>
+            {/* Away Team Logo */}
+            {awayTeam.logo ? (
+              <Image
+                source={{ uri: awayTeam.logo }}
+                style={[styles.teamLogo, isLive && styles.liveTeamLogo]}
+                resizeMode="cover"
+              />
+            ) : (
+              <View
+                style={[
+                  styles.teamLogoPlaceholder,
+                  isLive && styles.liveTeamLogoPlaceholder,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.teamLogoPlaceholderText,
+                    isLive && { fontSize: 22 },
+                  ]}
+                >
+                  {awayTeam.name && awayTeam.name !== "Unknown Team"
+                    ? awayTeam.name.charAt(0)
+                    : "U"}
+                </Text>
+              </View>
+            )}
+            <Text style={[styles.teamName, isLive && styles.liveTeamName]}>
+              {awayTeam.name}
+            </Text>
+          </View>
         </View>
-      </View>
-      <View style={styles.matchDetails}>
-        <Text style={styles.matchTime}>🕐 {match.time}</Text>
-        <Text style={styles.matchVenue}>📍 {match.venue}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-};
+
+        <View style={styles.matchDetails}>
+          <Text style={styles.matchTime}>🕐 {match.time}</Text>
+          <Text style={styles.matchVenue}>📍 {match.venue}</Text>
+        </View>
+
+        {isLive && (
+          <TouchableOpacity 
+            style={styles.watchLiveButton}
+            onPress={() => match.id && navigateToMatchFixture(String(match.id))}
+          >
+            <Ionicons name="football-outline" size={16} color={COLORS.white} />
+            <Text style={styles.watchLiveButtonText}>WATCH MATCH DETAILS</Text>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.white} />
+          </TouchableOpacity>
+        )}
+
+        {/* Debug section - only show for matches that should be live */}
+        {match.date === '2025-06-08' && match.time === '01:39' && (
+          <View style={styles.matchDebug}>
+            <Text style={styles.debugText}>
+              Match Date: {match.date} {match.time}{'\n'}
+              Current: {currentDateTime.toISOString()}{'\n'}
+              Status: {match.status}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
+  // Get Indian time for display
+  const indianTime = getIndianTime(currentDateTime);
+  const indianTimeFormatted = formatIndianTime(indianTime);
 
   return (
     <View style={styles.container}>
@@ -267,6 +562,32 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         )}
       </View>
 
+      {/* Current time display - Now with Indian time */}
+      <View style={styles.currentTimeBar}>
+        <View style={styles.currentTimeDisplay}>
+          <Ionicons name="time-outline" size={16} color={COLORS.white} />
+          <Text style={styles.currentTimeText}>
+            {indianTimeFormatted} (IST)
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={handleRefresh}
+          disabled={refreshing}
+        >
+          <Ionicons name="refresh" size={16} color={COLORS.white} />
+          <Text style={styles.refreshButtonText}>
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* User info bar with username */}
+      <View style={styles.userInfoBar}>
+        <Text style={styles.usernameText}>@{CURRENT_USERNAME}</Text>
+        <Text style={styles.currentDateText}>{CURRENT_TIMESTAMP}</Text>
+      </View>
+
       <ScrollView style={styles.content}>
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>📅 Scheduling Rules</Text>
@@ -277,12 +598,44 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </Text>
         </View>
 
+        {/* User welcome message */}
+        {user && (
+          <View style={styles.welcomeCard}>
+            <View style={styles.welcomeHeader}>
+              <Ionicons
+                name="person-circle-outline"
+                size={24}
+                color={COLORS.primary}
+              />
+              <Text style={styles.welcomeTitle}>
+                Welcome, {user.name || CURRENT_USERNAME}
+              </Text>
+            </View>
+            <Text style={styles.welcomeText}>
+              {liveMatches.length > 0
+                ? `There are ${liveMatches.length} live matches happening now!`
+                : "No live matches at the moment. Check back later!"}
+            </Text>
+          </View>
+        )}
+
+        {/* Display debugging info in development mode */}
+        {/* {__DEV__ && renderDebugView()} */}
+
         {/* Live Matches Section */}
         {liveMatches.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.sectionTitle, styles.liveTitle]}>
-              Live Matches ({liveMatches.length})
-            </Text>
+          <View style={styles.liveSection}>
+            <View style={styles.liveSectionHeader}>
+              <Animated.View
+                style={[
+                  styles.liveSectionDot,
+                  { transform: [{ scale: pulseAnim }] },
+                ]}
+              />
+              <Text style={styles.liveSectionTitle}>
+                Live Matches ({liveMatches.length})
+              </Text>
+            </View>
             {liveMatches.map(renderMatchCard)}
           </View>
         )}
@@ -363,20 +716,21 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   showsHorizontalScrollIndicator={false}
                   style={styles.teamPicker}
                 >
-                  {teams.map((team) => (
+                  {teams?.map((team) => (
                     <TouchableOpacity
-                      key={team.id}
+                      key={team.id || team._id || `team-${Math.random()}`}
                       style={[
                         styles.teamPickerItem,
-                        selectedHomeTeam === team.id &&
+                        (selectedHomeTeam === team.id || selectedHomeTeam === team._id) &&
                           styles.selectedTeamPickerItem,
                       ]}
-                      onPress={() => setSelectedHomeTeam(team.id)}
+                      onPress={() => setSelectedHomeTeam(team.id || team._id)}
                     >
                       {team.logo ? (
                         <Image
                           source={{ uri: team.logo }}
                           style={styles.teamPickerLogo}
+                          resizeMode="cover"
                         />
                       ) : (
                         <View style={styles.teamPickerLogoPlaceholder}>
@@ -388,7 +742,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       <Text
                         style={[
                           styles.teamPickerText,
-                          selectedHomeTeam === team.id &&
+                          (selectedHomeTeam === team.id || selectedHomeTeam === team._id) &&
                             styles.selectedTeamPickerText,
                         ]}
                       >
@@ -396,6 +750,9 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       </Text>
                     </TouchableOpacity>
                   ))}
+                  {(!teams || teams.length === 0) && (
+                    <Text style={styles.noTeamsText}>No teams available</Text>
+                  )}
                 </ScrollView>
               </View>
 
@@ -406,20 +763,21 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   showsHorizontalScrollIndicator={false}
                   style={styles.teamPicker}
                 >
-                  {teams.map((team) => (
+                  {teams?.map((team) => (
                     <TouchableOpacity
-                      key={team.id}
+                      key={team.id || team._id || `team-away-${Math.random()}`}
                       style={[
                         styles.teamPickerItem,
-                        selectedAwayTeam === team.id &&
+                        (selectedAwayTeam === team.id || selectedAwayTeam === team._id) &&
                           styles.selectedTeamPickerItem,
                       ]}
-                      onPress={() => setSelectedAwayTeam(team.id)}
+                      onPress={() => setSelectedAwayTeam(team.id || team._id)}
                     >
                       {team.logo ? (
                         <Image
                           source={{ uri: team.logo }}
                           style={styles.teamPickerLogo}
+                          resizeMode="cover"
                         />
                       ) : (
                         <View style={styles.teamPickerLogoPlaceholder}>
@@ -431,7 +789,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       <Text
                         style={[
                           styles.teamPickerText,
-                          selectedAwayTeam === team.id &&
+                          (selectedAwayTeam === team.id || selectedAwayTeam === team._id) &&
                             styles.selectedTeamPickerText,
                         ]}
                       >
@@ -439,6 +797,9 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       </Text>
                     </TouchableOpacity>
                   ))}
+                  {(!teams || teams.length === 0) && (
+                    <Text style={styles.noTeamsText}>No teams available</Text>
+                  )}
                 </ScrollView>
               </View>
 
@@ -518,8 +879,54 @@ const styles = StyleSheet.create({
   addButton: {
     padding: 5,
   },
+  currentTimeBar: {
+    backgroundColor: COLORS.blue,
+    padding: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  currentTimeDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  currentTimeText: {
+    color: COLORS.white,
+    fontSize: 14,
+    marginLeft: 5,
+    fontWeight: "bold",
+  },
+  refreshButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+  },
+  refreshButtonText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: "bold",
+    marginLeft: 5,
+  },
   content: {
     flex: 1,
+  },
+  userInfoBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(255,255,255,0.05)",
+    padding: 10,
+  },
+  usernameText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  currentDateText: {
+    color: COLORS.gray,
+    fontSize: 12,
   },
   infoCard: {
     backgroundColor: COLORS.background,
@@ -540,17 +947,61 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
+  welcomeCard: {
+    backgroundColor: COLORS.background,
+    margin: 20,
+    marginTop: 0,
+    padding: 20,
+    borderRadius: 15,
+    borderLeftWidth: 4,
+    borderLeftColor: "#4CAF50",
+  },
+  welcomeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  welcomeTitle: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: "bold",
+    marginLeft: 10,
+  },
+  welcomeText: {
+    color: COLORS.gray,
+    fontSize: 14,
+  },
   section: {
     padding: 20,
+  },
+  liveSection: {
+    padding: 20,
+    backgroundColor: "rgba(255,69,0,0.08)",
+    marginHorizontal: 20,
+    borderRadius: 15,
+  },
+  liveSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 15,
+  },
+  liveSectionDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#ff4500",
+    marginRight: 10,
+  },
+  liveSectionTitle: {
+    color: "#ff4500", // Bright orange for live matches
+    fontSize: 18,
+    fontWeight: "bold",
   },
   sectionTitle: {
     color: COLORS.primary,
     fontSize: 18,
     fontWeight: "bold",
     marginBottom: 15,
-  },
-  liveTitle: {
-    color: "#ff4500", // Bright orange for live matches
   },
   emptyState: {
     alignItems: "center",
@@ -568,11 +1019,43 @@ const styles = StyleSheet.create({
     marginTop: 5,
     textAlign: "center",
   },
+  noTeamsText: {
+    color: COLORS.gray,
+    fontSize: 14,
+    fontStyle: "italic",
+    padding: 10,
+  },
   matchCard: {
     backgroundColor: COLORS.background,
     borderRadius: 15,
     padding: 20,
     marginBottom: 15,
+    position: "relative", // For absolute positioned overlay
+  },
+  liveMatchCard: {
+    borderWidth: 2,
+    borderColor: "#ff4500",
+  },
+  liveOverlayContainer: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  liveOverlay: {
+    backgroundColor: "#ff4500",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderTopRightRadius: 15,
+    borderBottomLeftRadius: 15,
+  },
+  liveOverlayText: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: "bold",
+    marginLeft: 5,
   },
   matchHeader: {
     flexDirection: "row",
@@ -628,6 +1111,15 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     marginBottom: 5,
+    backgroundColor: COLORS.background, // Add background to ensure visibility
+  },
+  liveTeamLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: "#ff4500",
+    marginBottom: 10,
   },
   teamLogoPlaceholder: {
     width: 40,
@@ -637,6 +1129,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 5,
+  },
+  liveTeamLogoPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "#ff4500",
+    marginBottom: 10,
   },
   teamLogoPlaceholderText: {
     color: COLORS.black,
@@ -649,10 +1148,41 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
+  liveTeamName: {
+    fontSize: 18,
+  },
   vs: {
     color: COLORS.gray,
     fontSize: 14,
     marginHorizontal: 15,
+  },
+  liveScoreContainer: {
+    alignItems: "center",
+    padding: 10,
+  },
+  liveTime: {
+    color: "#ff4500",
+    fontSize: 14,
+    fontWeight: "bold",
+    marginBottom: 5,
+  },
+  liveScoreDisplay: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ff4500",
+    paddingHorizontal: 15,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  liveScoreText: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: "bold",
+    paddingHorizontal: 5,
+  },
+  liveScoreSeparator: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 18,
   },
   matchDetails: {
     flexDirection: "row",
@@ -665,6 +1195,27 @@ const styles = StyleSheet.create({
   matchVenue: {
     color: COLORS.gray,
     fontSize: 14,
+  },
+  watchLiveButton: {
+    marginTop: 15,
+    backgroundColor: "#ff4500",
+    paddingVertical: 10,
+    borderRadius: 10,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  watchLiveButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: "bold",
+    marginHorizontal: 10,
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.white,
   },
   modalOverlay: {
     flex: 1,
@@ -813,6 +1364,39 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     fontSize: 16,
   },
+  // Debug styles
+  debugContainer: {
+    margin: 20,
+    padding: 15,
+    backgroundColor: 'rgba(255, 0, 0, 0.1)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'red',
+  },
+  debugTitle: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  debugText: {
+    color: COLORS.white,
+    fontSize: 12,
+  },
+  debugItem: {
+    marginTop: 10,
+    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 5,
+  },
+  matchDebug: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: 'rgba(255,255,0,0.1)',
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 5,
+  }
 });
 
 export default ScheduleMatchScreen;
