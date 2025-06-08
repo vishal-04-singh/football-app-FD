@@ -27,21 +27,18 @@ const MATCH_STATUS = {
   COMPLETED: "completed",
 };
 
-// Current timestamp from requirements
-// Current Date and Time (UTC): 2025-06-07 20:14:33
-// Current User's Login: vishal-04-singh
-const CURRENT_TIMESTAMP = "2025-06-07 20:14:33";
+// Current timestamp from requirements - CRITICAL for consistency across the app
+// Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-06-08 20:56:22
+
 const CURRENT_USERNAME = "vishal-04-singh";
 
-// Convert to Indian time (UTC+5:30)
-const getIndianTime = (date) => {
-  const utcDate = new Date(date);
-  const indianOffset = 5.5 * 60 * 60 * 1000; // 5 hours and 30 minutes in milliseconds
-  return new Date(utcDate.getTime() + indianOffset);
+// Get current date/time in local time
+const getCurrentLocalDateTime = () => {
+  return new Date(); // This returns local time
 };
 
-// Format for Indian time display
-const formatIndianTime = (date) => {
+// Convert UTC time to local time for display
+const formatLocalTime = (date) => {
   return date.toLocaleString("en-IN", {
     day: "numeric",
     month: "short",
@@ -49,7 +46,7 @@ const formatIndianTime = (date) => {
     hour: "numeric",
     minute: "numeric",
     second: "numeric",
-    hour12: true
+    hour12: true,
   });
 };
 
@@ -64,20 +61,25 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [matchTime, setMatchTime] = useState("");
   const [venue, setVenue] = useState("Football Arena");
   const [selectedWeek, setSelectedWeek] = useState(1);
-  const [currentMatches, setCurrentMatches] = useState(matches);
-  const [currentDateTime, setCurrentDateTime] = useState(new Date(CURRENT_TIMESTAMP));
+  const [currentMatches, setCurrentMatches] = useState(matches || []);
+
+  // Create a Date object for current local time
+  const [currentDateTime, setCurrentDateTime] = useState(
+    getCurrentLocalDateTime()
+  );
+
   const [refreshing, setRefreshing] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Date and time picker states
+  // Date and time picker states - Initialize with current date/time
   const [date, setDate] = useState(new Date());
   const [time, setTime] = useState(new Date());
 
   // Debug states to help diagnose issues
   const [debugInfo, setDebugInfo] = useState({
-    currentTime: "",
+    currentTime: currentDateTime.toISOString(),
     matchTimes: [],
-    statusCalculations: []
+    statusCalculations: [],
   });
 
   // Start pulsing animation for live indicators
@@ -100,27 +102,21 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     ).start();
   }, []);
 
-  // Update match statuses based on current time
+  // Update current time every 30 seconds for more responsive status updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentDateTime(getCurrentLocalDateTime());
+    }, 30000); // Update every 30 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Update match statuses when matches change or current time changes
   useEffect(() => {
     if (matches && matches.length > 0) {
       updateMatchStatuses();
     }
   }, [matches, currentDateTime]);
-
-  // Update the current datetime every minute
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      // In a real app, this would just be:
-      // setCurrentDateTime(new Date());
-
-      // For our demo, we'll manually update
-      const newDateTime = new Date(currentDateTime);
-      newDateTime.setSeconds(newDateTime.getSeconds() + 10); // Update faster for demo
-      setCurrentDateTime(newDateTime);
-    }, 10000); // Update every 10 seconds for demo
-
-    return () => clearInterval(intervalId);
-  }, [currentDateTime]);
 
   // Function to determine match status based on date and time
   const getMatchStatus = (match) => {
@@ -129,62 +125,66 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
 
     try {
-      // Parse date (YYYY-MM-DD) and time (HH:MM) into a proper Date object
+      // Parse date (YYYY-MM-DD) and time (HH:MM) into a Date object
       const [year, month, day] = match.date.split("-").map(Number);
       const [hours, minutes] = match.time.split(":").map(Number);
-      
-      // Create match date object (months are 0-indexed in JS Date)
+
+      // Create match date object in LOCAL time (not UTC) to match your picker
       const matchDateTime = new Date(year, month - 1, day, hours, minutes);
-      
-      // Calculate match end time (90 minutes after start)
-      const matchEndTime = new Date(matchDateTime);
-      matchEndTime.setMinutes(matchEndTime.getMinutes() + 90);
-      
-      // Get status
-      let status = MATCH_STATUS.UPCOMING;
-      
-      if (currentDateTime >= matchDateTime && currentDateTime < matchEndTime) {
-        status = MATCH_STATUS.LIVE;
-      } else if (currentDateTime >= matchEndTime) {
-        status = MATCH_STATUS.COMPLETED;
+
+      // Calculate match end time (match time + 72 minutes = 1.2 hours)
+      const matchEndTime = new Date(matchDateTime.getTime() + 72 * 60 * 1000);
+
+      // Get current time in local time zone
+      const currentLocalTime = new Date();
+
+      // Debug logging for troubleshooting
+      if (match.time === "20:56" || match.time === "20:57") {
+        console.log("=== DEBUG MATCH STATUS ===");
+        console.log("Match Date:", match.date, "Match Time:", match.time);
+        console.log("Match DateTime (Local):", matchDateTime.toString());
+        console.log("Match End Time (Local):", matchEndTime.toString());
+        console.log("Current Local Time:", currentLocalTime.toString());
+        console.log("Is after start?", currentLocalTime >= matchDateTime);
+        console.log("Is before end?", currentLocalTime < matchEndTime);
+        console.log("Time diff (minutes):", (currentLocalTime.getTime() - matchDateTime.getTime()) / (1000 * 60));
       }
-      
-      // Save information for debugging
-      setDebugInfo(prev => ({
-        ...prev,
-        currentTime: currentDateTime.toString(),
-        matchTimes: [...prev.matchTimes, matchDateTime.toString()],
-        statusCalculations: [...prev.statusCalculations, {
-          matchDate: match.date,
-          matchTime: match.time,
-          matchDateTime: matchDateTime.toString(),
-          currentDateTime: currentDateTime.toString(),
-          matchEndTime: matchEndTime.toString(),
-          status,
-          isAfterStart: currentDateTime >= matchDateTime,
-          isBeforeEnd: currentDateTime < matchEndTime
-        }]
-      }));
-      
-      return status;
+
+      // Determine status
+      if (currentLocalTime >= matchDateTime && currentLocalTime < matchEndTime) {
+        // Match is LIVE
+        return MATCH_STATUS.LIVE;
+      } else if (currentLocalTime >= matchEndTime) {
+        // Match is COMPLETED
+        return MATCH_STATUS.COMPLETED;
+      } else {
+        // Match is UPCOMING
+        return MATCH_STATUS.UPCOMING;
+      }
     } catch (error) {
       console.error("Error calculating match status:", error, match);
       return MATCH_STATUS.UPCOMING; // Default to upcoming on error
     }
   };
 
-  // Update match statuses
+  // Update all match statuses
   const updateMatchStatuses = () => {
     if (!matches) return;
-    
+
     const updatedMatches = matches.map((match) => {
+      // Skip updating matches that are already marked as "completed" in the database
+      if (match.status === "completed" && match._manuallyCompleted) {
+        return match;
+      }
+
       const calculatedStatus = getMatchStatus(match);
 
-      // Only update if the calculated status differs from current status
-      // But don't override if a match is already manually marked as completed
-      if (match.status !== calculatedStatus && match.status ) {
+      // Update match with new calculated status if it's different
+      if (match.status !== calculatedStatus) {
+        console.log(`Match ${match.time} status changed from ${match.status} to ${calculatedStatus}`);
         return { ...match, status: calculatedStatus };
       }
+
       return match;
     });
 
@@ -197,14 +197,6 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     try {
       await refreshData();
       updateMatchStatuses();
-      
-      // Clear debug info on refresh
-      setDebugInfo({
-        currentTime: currentDateTime.toString(),
-        matchTimes: [],
-        statusCalculations: []
-      });
-      
       Alert.alert("Success", "Match data refreshed!");
     } catch (error) {
       console.error("Error refreshing data:", error);
@@ -213,22 +205,82 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
+  // Fixed date change handler with proper state updates
   const handleDateChange = (selectedDate: Date) => {
+    console.log("Date picker changed:", selectedDate);
+    
+    // Update the picker state
     setDate(selectedDate);
-    // Format date as YYYY-MM-DD
-    const formattedDate = selectedDate.toISOString().split("T")[0];
+    
+    // Format date as YYYY-MM-DD for storage (using local time)
+    const year = selectedDate.getFullYear();
+    const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
+    const day = String(selectedDate.getDate()).padStart(2, "0");
+    const formattedDate = `${year}-${month}-${day}`;
+    
+    console.log("Setting matchDate to:", formattedDate);
     setMatchDate(formattedDate);
   };
 
+  // Fixed time change handler with proper state updates
   const handleTimeChange = (selectedTime: Date) => {
+    console.log("Time picker changed:", selectedTime);
+    
+    // Update the picker state
     setTime(selectedTime);
-    // Format time as HH:MM
-    const hours = selectedTime.getHours().toString().padStart(2, "0");
-    const minutes = selectedTime.getMinutes().toString().padStart(2, "0");
-    setMatchTime(`${hours}:${minutes}`);
+    
+    // Store in 24-hour format for calculations (HH:MM)
+    const hours24 = String(selectedTime.getHours()).padStart(2, "0");
+    const minutes = String(selectedTime.getMinutes()).padStart(2, "0");
+    const formattedTime = `${hours24}:${minutes}`;
+    
+    console.log("Setting matchTime to:", formattedTime);
+    setMatchTime(formattedTime);
+  };
+
+  // Add a helper function to format time for display
+  const formatTimeForDisplay = (time24: string) => {
+    if (!time24) return "";
+
+    const [hours24Str, minutes] = time24.split(":");
+    let hours = parseInt(hours24Str);
+    const ampm = hours >= 12 ? "PM" : "AM";
+
+    if (hours === 0) {
+      hours = 12; // 12 AM
+    } else if (hours > 12) {
+      hours = hours - 12; // Convert PM hours
+    }
+
+    const formattedHours = String(hours).padStart(2, "0");
+    return `${formattedHours}:${minutes} ${ampm}`;
+  };
+
+  // Updated form reset function
+  const resetScheduleForm = () => {
+    setSelectedHomeTeam("");
+    setSelectedAwayTeam("");
+    setMatchDate("");
+    setMatchTime("");
+    setVenue("Football Arena");
+    setSelectedWeek(1);
+    
+    // Reset picker states to current date/time
+    const now = new Date();
+    setDate(now);
+    setTime(now);
+    
+    console.log("Form reset completed");
   };
 
   const handleScheduleMatch = () => {
+    console.log("Attempting to schedule match with:", {
+      homeTeam: selectedHomeTeam,
+      awayTeam: selectedAwayTeam,
+      date: matchDate,
+      time: matchTime,
+    });
+
     if (!selectedHomeTeam || !selectedAwayTeam || !matchDate || !matchTime) {
       Alert.alert("Error", "Please fill all fields");
       return;
@@ -244,7 +296,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       return;
     }
 
-    // Determine initial status
+    // Create the match data object
     const matchData: ScheduleMatchData = {
       homeTeamId: selectedHomeTeam,
       awayTeamId: selectedAwayTeam,
@@ -252,25 +304,36 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       time: matchTime,
       venue,
       week: selectedWeek,
-      status: MATCH_STATUS.UPCOMING, // Default to upcoming, will be updated by status calculation
+      status: MATCH_STATUS.UPCOMING, // Default to upcoming, status will be recalculated
     };
 
+    console.log("Scheduling match with data:", matchData);
+
+    // Schedule the match
     scheduleMatch(matchData);
 
-    // Reset form
-    setSelectedHomeTeam("");
-    setSelectedAwayTeam("");
-    setMatchDate("");
-    setMatchTime("");
-    setVenue("Football Arena");
+    // Reset form using the new function
+    resetScheduleForm();
     setShowScheduleModal(false);
 
+    // Notify user and update data
     Alert.alert("Success", "Match scheduled successfully!");
+    setTimeout(() => {
+      updateMatchStatuses(); // Update statuses after a short delay
+    }, 500);
+  };
+
+  // Updated modal open handler to reset form
+  const openScheduleModal = () => {
+    resetScheduleForm();
+    setShowScheduleModal(true);
   };
 
   const getTeamInfo = (teamId: string) => {
+    if (!teamId || !teams) return { name: "Unknown Team", logo: null };
+
     // Check for various ID formats (_id or id)
-    const team = teams?.find(
+    const team = teams.find(
       (t) =>
         t.id === teamId ||
         t._id === teamId ||
@@ -292,17 +355,17 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   // Group matches by status
-  const liveMatches = currentMatches?.filter(
-    (match) => match.status === MATCH_STATUS.LIVE
-  ) || [];
-  
-  const upcomingMatches = currentMatches?.filter(
-    (match) => match.status === MATCH_STATUS.UPCOMING
-  ) || [];
-  
-  const completedMatches = currentMatches?.filter(
-    (match) => match.status === MATCH_STATUS.COMPLETED
-  ) || [];
+  const liveMatches =
+    currentMatches?.filter((match) => match.status === MATCH_STATUS.LIVE) || [];
+
+  const upcomingMatches =
+    currentMatches?.filter((match) => match.status === MATCH_STATUS.UPCOMING) ||
+    [];
+
+  const completedMatches =
+    currentMatches?.filter(
+      (match) => match.status === MATCH_STATUS.COMPLETED
+    ) || [];
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
@@ -316,7 +379,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   const navigateToMatchFixture = (matchId: string) => {
-    navigation.navigate("MatchFixture", { matchId });
+    navigation.navigate("LiveMatch", { matchId });
   };
 
   const getStatusBadgeStyle = (status: string) => {
@@ -341,29 +404,38 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
-  // Function to calculate elapsed time for live matches
+  // Calculate elapsed time for live matches
   const calculateElapsedTime = (dateStr, timeStr) => {
     if (!dateStr || !timeStr) return "0'";
 
     try {
-      // Parse date and time into proper format
       const [year, month, day] = dateStr.split("-").map(Number);
       const [hours, minutes] = timeStr.split(":").map(Number);
-      
-      // Create match date object (months are 0-indexed in JS Date)
+
+      // Create match date object in LOCAL time
       const matchDateTime = new Date(year, month - 1, day, hours, minutes);
+      const currentLocalTime = new Date();
 
       // Calculate elapsed minutes
-      const elapsedMs = currentDateTime.getTime() - matchDateTime.getTime();
+      const elapsedMs = currentLocalTime.getTime() - matchDateTime.getTime();
       const elapsedMinutes = Math.floor(elapsedMs / (1000 * 60));
 
-      // Format for display
-      if (elapsedMinutes <= 45) {
-        return `${elapsedMinutes}'`;
-      } else if (elapsedMinutes <= 60) {
-        return "HT";
+      // Handle negative time (should not happen for live matches)
+      if (elapsedMinutes < 0) {
+        return "0'";
+      }
+
+      // Format for display (up to 72 minutes total)
+      if (elapsedMinutes <= 36) {
+        return `${elapsedMinutes}'`; // First half
+      } else if (elapsedMinutes <= 50) {
+        return "HT"; // Half time (14 minutes break)
+      } else if (elapsedMinutes <= 72) {
+        // Second half
+        const secondHalfMinutes = elapsedMinutes - 50;
+        return `${45 + secondHalfMinutes}'`;
       } else {
-        return `${Math.min(elapsedMinutes - 15, 90)}'`; // Subtract 15 min for half-time
+        return "FT"; // Full time
       }
     } catch (error) {
       console.error("Error calculating elapsed time:", error);
@@ -371,50 +443,23 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     }
   };
 
-  // Debug view to help diagnose issues
-  const renderDebugView = () => {
-    return (
-      <View style={styles.debugContainer}>
-        <Text style={styles.debugTitle}>Debug Info</Text>
-        <Text style={styles.debugText}>Current Time: {debugInfo.currentTime}</Text>
-        
-        {debugInfo.statusCalculations.slice(-3).map((calc, index) => (
-          <View key={index} style={styles.debugItem}>
-            <Text style={styles.debugText}>Match: {calc.matchDate} {calc.matchTime}</Text>
-            <Text style={styles.debugText}>Status: {calc.status}</Text>
-            <Text style={styles.debugText}>Is After Start: {String(calc.isAfterStart)}</Text>
-            <Text style={styles.debugText}>Is Before End: {String(calc.isBeforeEnd)}</Text>
-          </View>
-        ))}
-      </View>
-    );
+  // Get current time for display
+  const getCurrentTimeForDisplay = () => {
+    return formatLocalTime(currentDateTime);
   };
 
-  // Updated renderMatchCard function
+  // Render a match card
   const renderMatchCard = (match) => {
     const homeTeam = getTeamInfo(match.homeTeamId);
     const awayTeam = getTeamInfo(match.awayTeamId);
     const isLive = match.status === MATCH_STATUS.LIVE;
 
     return (
-      <TouchableOpacity
+      <View
         key={match.id || `match-${Math.random()}`}
         style={[styles.matchCard, isLive && styles.liveMatchCard]}
-        onPress={() => match.id && navigateToMatchFixture(String(match.id))}
       >
-        {isLive && (
-          <View style={styles.liveOverlayContainer}>
-            <View style={styles.liveOverlay}>
-              <Animated.View 
-                style={[
-                  styles.pulseDot, 
-                  { transform: [{ scale: pulseAnim }] }
-                ]} 
-              />
-              <Text style={styles.liveOverlayText}>LIVE NOW</Text>
-            </View>
-          </View>
-        )}
+        {isLive && <View style={styles.liveOverlayContainer}></View>}
 
         <View style={styles.matchHeader}>
           <Text style={styles.weekBadge}>Week {match.week || 1}</Text>
@@ -509,38 +554,35 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         </View>
 
         <View style={styles.matchDetails}>
-          <Text style={styles.matchTime}>🕐 {match.time}</Text>
+          <Text style={styles.matchTime}>🕐 {formatTimeForDisplay(match.time)}</Text>
           <Text style={styles.matchVenue}>📍 {match.venue}</Text>
         </View>
 
         {isLive && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.watchLiveButton}
             onPress={() => match.id && navigateToMatchFixture(String(match.id))}
           >
             <Ionicons name="football-outline" size={16} color={COLORS.white} />
-            <Text style={styles.watchLiveButtonText}>WATCH MATCH DETAILS</Text>
+            <Text style={styles.watchLiveButtonText}>UPDATE THE MATCH</Text>
             <Ionicons name="chevron-forward" size={16} color={COLORS.white} />
           </TouchableOpacity>
         )}
 
-        {/* Debug section - only show for matches that should be live */}
-        {match.date === '2025-06-08' && match.time === '01:39' && (
+        {/* Debug information for current time matches */}
+        {(match.time === "20:56" || match.time === "20:57") && (
           <View style={styles.matchDebug}>
             <Text style={styles.debugText}>
-              Match Date: {match.date} {match.time}{'\n'}
-              Current: {currentDateTime.toISOString()}{'\n'}
-              Status: {match.status}
+              🐛 DEBUG: {match.date} {match.time}
+              {"\n"}Current: {getCurrentTimeForDisplay()}
+              {"\n"}Status: {match.status}
+              {"\n"}Should be: {getMatchStatus(match)}
             </Text>
           </View>
         )}
-      </TouchableOpacity>
+      </View>
     );
   };
-
-  // Get Indian time for display
-  const indianTime = getIndianTime(currentDateTime);
-  const indianTimeFormatted = formatIndianTime(indianTime);
 
   return (
     <View style={styles.container}>
@@ -555,19 +597,19 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         {user?.role === "management" && (
           <TouchableOpacity
             style={styles.addButton}
-            onPress={() => setShowScheduleModal(true)}
+            onPress={openScheduleModal} // Use the new function
           >
             <Ionicons name="add" size={24} color={COLORS.primary} />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Current time display - Now with Indian time */}
+      {/* Current time display with local time */}
       <View style={styles.currentTimeBar}>
         <View style={styles.currentTimeDisplay}>
           <Ionicons name="time-outline" size={16} color={COLORS.white} />
           <Text style={styles.currentTimeText}>
-            {indianTimeFormatted} (IST)
+            {getCurrentTimeForDisplay()} (Local)
           </Text>
         </View>
         <TouchableOpacity
@@ -582,19 +624,14 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      {/* User info bar with username */}
-      <View style={styles.userInfoBar}>
-        <Text style={styles.usernameText}>@{CURRENT_USERNAME}</Text>
-        <Text style={styles.currentDateText}>{CURRENT_TIMESTAMP}</Text>
-      </View>
-
       <ScrollView style={styles.content}>
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>📅 Scheduling Rules</Text>
+          <Text style={styles.infoTitle}>📅 Match Status Logic</Text>
           <Text style={styles.infoText}>
-            • Tournament runs for 4 weeks{"\n"}• Each team plays 7 matches (28
-            total){"\n"}• Week 4 is reserved for playoffs{"\n"}• All matches at
-            Football Arena
+            • UPCOMING: Before match start time{"\n"}
+            • LIVE: From start time to +72 minutes (1.2 hours){"\n"}
+            • COMPLETED: After 72 minutes from start{"\n"}
+            • Current Time: {getCurrentTimeForDisplay()}
           </Text>
         </View>
 
@@ -618,9 +655,6 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             </Text>
           </View>
         )}
-
-        {/* Display debugging info in development mode */}
-        {/* {__DEV__ && renderDebugView()} */}
 
         {/* Live Matches Section */}
         {liveMatches.length > 0 && (
@@ -721,7 +755,8 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       key={team.id || team._id || `team-${Math.random()}`}
                       style={[
                         styles.teamPickerItem,
-                        (selectedHomeTeam === team.id || selectedHomeTeam === team._id) &&
+                        (selectedHomeTeam === team.id ||
+                          selectedHomeTeam === team._id) &&
                           styles.selectedTeamPickerItem,
                       ]}
                       onPress={() => setSelectedHomeTeam(team.id || team._id)}
@@ -742,7 +777,8 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       <Text
                         style={[
                           styles.teamPickerText,
-                          (selectedHomeTeam === team.id || selectedHomeTeam === team._id) &&
+                          (selectedHomeTeam === team.id ||
+                            selectedHomeTeam === team._id) &&
                             styles.selectedTeamPickerText,
                         ]}
                       >
@@ -768,7 +804,8 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       key={team.id || team._id || `team-away-${Math.random()}`}
                       style={[
                         styles.teamPickerItem,
-                        (selectedAwayTeam === team.id || selectedAwayTeam === team._id) &&
+                        (selectedAwayTeam === team.id ||
+                          selectedAwayTeam === team._id) &&
                           styles.selectedTeamPickerItem,
                       ]}
                       onPress={() => setSelectedAwayTeam(team.id || team._id)}
@@ -789,7 +826,8 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       <Text
                         style={[
                           styles.teamPickerText,
-                          (selectedAwayTeam === team.id || selectedAwayTeam === team._id) &&
+                          (selectedAwayTeam === team.id ||
+                            selectedAwayTeam === team._id) &&
                             styles.selectedTeamPickerText,
                         ]}
                       >
@@ -804,7 +842,9 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               </View>
 
               <View style={styles.dateTimeSection}>
-                <Text style={styles.inputLabel}>Match Date:</Text>
+                <Text style={styles.inputLabel}>
+                  Match Date: {matchDate ? `(${matchDate})` : "(Not selected)"}
+                </Text>
                 <CustomDateTimePicker
                   mode="date"
                   value={date}
@@ -814,7 +854,9 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
               </View>
 
               <View style={styles.dateTimeSection}>
-                <Text style={styles.inputLabel}>Match Time:</Text>
+                <Text style={styles.inputLabel}>
+                  Match Time: {matchTime ? `(${formatTimeForDisplay(matchTime)})` : "(Not selected)"}
+                </Text>
                 <CustomDateTimePicker
                   mode="time"
                   value={time}
@@ -825,10 +867,35 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
               <View style={styles.dateTimeSection}>
                 <Text style={styles.inputLabel}>Venue (Fixed)</Text>
-                <View style={styles.venueContainer}>
-                  <Text style={styles.venueText}>Football Arena</Text>
-                  <Ionicons name="location" size={20} color={COLORS.primary} />
+                <View style={[
+                  styles.venueContainer,
+                  // Apply same styling logic as date/time pickers
+                  (matchDate && matchTime) ? styles.venueContainerActive : styles.venueContainerInactive
+                ]}>
+                  <Text style={[
+                    styles.venueText,
+                    // Change text color based on whether date/time are selected
+                    (matchDate && matchTime) ? styles.venueTextActive : styles.venueTextInactive
+                  ]}>
+                    Football Arena
+                  </Text>
+                  <Ionicons 
+                    name="location" 
+                    size={20} 
+                    color={(matchDate && matchTime) ? COLORS.primary : COLORS.gray} 
+                  />
                 </View>
+              </View>
+
+              {/* Debug section to show current values */}
+              <View style={styles.debugSection}>
+                <Text style={styles.debugLabel}>Debug Info:</Text>
+                <Text style={styles.debugText}>
+                  Selected Date: {matchDate || "None"}{"\n"}
+                  Selected Time: {matchTime || "None"}{"\n"}
+                  Home Team: {selectedHomeTeam || "None"}{"\n"}
+                  Away Team: {selectedAwayTeam || "None"}
+                </Text>
               </View>
 
               <View style={styles.modalButtons}>
@@ -865,6 +932,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     padding: 20,
     backgroundColor: COLORS.background,
+    marginTop: 20,
   },
   backButton: {
     padding: 5,
@@ -913,21 +981,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  userInfoBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(255,255,255,0.05)",
-    padding: 10,
-  },
-  usernameText: {
-    color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  currentDateText: {
-    color: COLORS.gray,
-    fontSize: 12,
-  },
   infoCard: {
     backgroundColor: COLORS.background,
     margin: 20,
@@ -975,15 +1028,16 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   liveSection: {
-    padding: 20,
     backgroundColor: "rgba(255,69,0,0.08)",
     marginHorizontal: 20,
     borderRadius: 15,
+    paddingTop: 20,
   },
   liveSectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: 15,
+    paddingHorizontal: 20,
   },
   liveSectionDot: {
     width: 10,
@@ -1041,21 +1095,6 @@ const styles = StyleSheet.create({
     top: 0,
     right: 0,
     zIndex: 10,
-  },
-  liveOverlay: {
-    backgroundColor: "#ff4500",
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderTopRightRadius: 15,
-    borderBottomLeftRadius: 15,
-  },
-  liveOverlayText: {
-    color: COLORS.white,
-    fontSize: 10,
-    fontWeight: "bold",
-    marginLeft: 5,
   },
   matchHeader: {
     flexDirection: "row",
@@ -1211,12 +1250,6 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     marginHorizontal: 10,
   },
-  pulseDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.white,
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.8)",
@@ -1339,64 +1372,70 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     color: COLORS.white,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "bold",
   },
   confirmButtonText: {
     color: COLORS.black,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "bold",
   },
   dateTimeSection: {
     marginBottom: 20,
   },
+  // Updated venue container styles with conditional styling
   venueContainer: {
-    backgroundColor: COLORS.black,
     borderWidth: 1,
-    borderColor: COLORS.primary,
     borderRadius: 10,
     padding: 15,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    backgroundColor: COLORS.black,
+  },
+  venueContainerActive: {
+    borderColor: COLORS.primary, // Golden/yellow border when active
+  },
+  venueContainerInactive: {
+    borderColor: COLORS.gray, // Gray border when inactive
   },
   venueText: {
-    color: COLORS.gray,
     fontSize: 16,
+  },
+  venueTextActive: {
+    color: COLORS.primary, // Golden/yellow text when active
+  },
+  venueTextInactive: {
+    color: COLORS.gray, // Gray text when inactive
   },
   // Debug styles
-  debugContainer: {
-    margin: 20,
-    padding: 15,
-    backgroundColor: 'rgba(255, 0, 0, 0.1)',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'red',
-  },
-  debugTitle: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  debugText: {
-    color: COLORS.white,
-    fontSize: 12,
-  },
-  debugItem: {
-    marginTop: 10,
-    padding: 8,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 5,
-  },
   matchDebug: {
     marginTop: 10,
     padding: 10,
-    backgroundColor: 'rgba(255,255,0,0.1)',
+    backgroundColor: "rgba(255,255,0,0.1)",
     borderWidth: 1,
-    borderColor: COLORS.primary,
+    borderColor: "#FFD700",
     borderRadius: 5,
-  }
+  },
+  debugText: {
+    color: "#FFD700",
+    fontSize: 12,
+    fontFamily: "monospace",
+  },
+  debugSection: {
+    marginBottom: 15,
+    padding: 10,
+    backgroundColor: "rgba(0,255,0,0.1)",
+    borderRadius: 5,
+    borderWidth: 1,
+    borderColor: "#00FF00",
+  },
+  debugLabel: {
+    color: "#00FF00",
+    fontSize: 14,
+    fontWeight: "bold",
+    marginBottom: 5,
+  },
 });
 
 export default ScheduleMatchScreen;

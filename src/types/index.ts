@@ -33,6 +33,7 @@ export interface Player {
 }
 
 export interface Match {
+  _manuallyCompleted: boolean
   _id: string
   id: string
   homeTeamId: string
