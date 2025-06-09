@@ -164,6 +164,8 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
         teamId: teamIdToUse,
         isSubstitute,
         photo: playerPhoto,
+        _id: "",
+        jersey: 0
       })
 
       // Reset form

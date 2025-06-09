@@ -185,7 +185,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         console.log(
           `Match ${match.time} status changed from ${match.status} to ${calculatedStatus}`
         );
-        return { ...match, status: calculatedStatus };
+        return { ...match, status: calculatedStatus as "upcoming" | "live" | "completed" };
       }
 
       return match;
@@ -479,7 +479,6 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       time: matchTime,
       venue,
       week: selectedWeek,
-      status: MATCH_STATUS.UPCOMING, // Default to upcoming, status will be recalculated
       homeSquad: {
         mainPlayers: homeSquad.mainPlayers.map((p) => p.id),
         substitutes: homeSquad.substitutes.map((p) => p.id),

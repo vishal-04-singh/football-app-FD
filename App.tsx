@@ -20,6 +20,7 @@ import ErrorBoundary from "./components/ErrorBoundary"
 import ConnectionStatus from "./components/ConnectionStatus"
 import { Ionicons } from "@expo/vector-icons"
 import { COLORS } from "./src/constants/colors"
+import MatchDetailScreen from "./src/screens/MatchDetailScreen"
 
 const Stack = createStackNavigator()
 const Tab = createBottomTabNavigator()
@@ -105,11 +106,14 @@ function AppNavigator() {
           <Stack.Screen name="LiveMatch" component={LiveMatchScreen} options={{ title: "Live Match" }} />
           <Stack.Screen name="ScheduleMatch" component={ScheduleMatchScreen} options={{ headerShown: false }} />
           {/* <Stack.Screen name="MatchFixture" component={MatchFixtureScreen} options={{ headerShown: false }} /> */}
+          <Stack.Screen name="MatchDetail" component={MatchDetailScreen} options={{ headerShown: false }} />
         </>
       ) : (
         <>
           <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
           <Stack.Screen name="Signup" component={SignupScreen} options={{ headerShown: false }} />
+
+          
         </>
       )}
     </Stack.Navigator>

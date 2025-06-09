@@ -7,6 +7,8 @@ export interface User {
 }
 
 export interface Team {
+  primaryColor: string
+  secondaryColor: string
   _id: string
   id: string
   name: string
@@ -23,7 +25,8 @@ export interface Team {
 }
 
 export interface Player {
-  [x: string]: string
+  _id: string
+  jersey: number
   id: string
   name: string
   position: string
@@ -34,6 +37,8 @@ export interface Player {
 }
 
 export interface Match {
+  stadiumImage: any
+  broadcaster: any
   _manuallyCompleted: boolean
   _id: string
   id: string
@@ -50,6 +55,7 @@ export interface Match {
 }
 
 export interface MatchEvent {
+  teamId: string
   id: string
   type: "goal" | "yellow_card" | "red_card" | "substitution" | "assist"
   playerId: string
