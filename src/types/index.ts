@@ -23,6 +23,7 @@ export interface Team {
 }
 
 export interface Player {
+  [x: string]: string
   id: string
   name: string
   position: string
@@ -50,7 +51,7 @@ export interface Match {
 
 export interface MatchEvent {
   id: string
-  type: "goal" | "yellow_card" | "red_card" | "substitution"
+  type: "goal" | "yellow_card" | "red_card" | "substitution" | "assist"
   playerId: string
   playerName: string
   minute: number

@@ -18,8 +18,9 @@ import { useAuth } from "../contexts/AuthContext";
 import { useTournament } from "../contexts/TournamentContext";
 import { COLORS } from "../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
-import type { ScheduleMatchData } from "../types";
+import type { ScheduleMatchData, Player, Match } from "../types";
 import CustomDateTimePicker from "../../components/DateTimePicker";
+import apiService from "../../services/api";
 
 const MATCH_STATUS = {
   UPCOMING: "upcoming",
@@ -28,7 +29,7 @@ const MATCH_STATUS = {
 };
 
 // Current timestamp from requirements - CRITICAL for consistency across the app
-// Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-06-08 20:56:22
+// Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-06-09 08:39:28
 
 const CURRENT_USERNAME = "vishal-04-singh";
 
@@ -38,7 +39,7 @@ const getCurrentLocalDateTime = () => {
 };
 
 // Convert UTC time to local time for display
-const formatLocalTime = (date) => {
+const formatLocalTime = (date: Date) => {
   return date.toLocaleString("en-IN", {
     day: "numeric",
     month: "short",
@@ -63,6 +64,22 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   const [selectedWeek, setSelectedWeek] = useState(1);
   const [currentMatches, setCurrentMatches] = useState(matches || []);
 
+  // Playing squad selection states
+  const [homeSquad, setHomeSquad] = useState<{
+    mainPlayers: Player[];
+    substitutes: Player[];
+  }>({ mainPlayers: [], substitutes: [] });
+  const [awaySquad, setAwaySquad] = useState<{
+    mainPlayers: Player[];
+    substitutes: Player[];
+  }>({ mainPlayers: [], substitutes: [] });
+
+  // New player picker states
+  const [showHomePlayerPicker, setShowHomePlayerPicker] = useState(false);
+  const [showAwayPlayerPicker, setShowAwayPlayerPicker] = useState(false);
+  const [homeTeamPlayers, setHomeTeamPlayers] = useState<Player[]>([]);
+  const [awayTeamPlayers, setAwayTeamPlayers] = useState<Player[]>([]);
+
   // Create a Date object for current local time
   const [currentDateTime, setCurrentDateTime] = useState(
     getCurrentLocalDateTime()
@@ -74,13 +91,6 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   // Date and time picker states - Initialize with current date/time
   const [date, setDate] = useState(new Date());
   const [time, setTime] = useState(new Date());
-
-  // Debug states to help diagnose issues
-  const [debugInfo, setDebugInfo] = useState({
-    currentTime: currentDateTime.toISOString(),
-    matchTimes: [],
-    statusCalculations: [],
-  });
 
   // Start pulsing animation for live indicators
   useEffect(() => {
@@ -119,7 +129,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   }, [matches, currentDateTime]);
 
   // Function to determine match status based on date and time
-  const getMatchStatus = (match) => {
+  const getMatchStatus = (match: Match) => {
     if (!match || !match.date || !match.time) {
       return MATCH_STATUS.UPCOMING;
     }
@@ -138,20 +148,11 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       // Get current time in local time zone
       const currentLocalTime = new Date();
 
-      // Debug logging for troubleshooting
-      if (match.time === "20:56" || match.time === "20:57") {
-        console.log("=== DEBUG MATCH STATUS ===");
-        console.log("Match Date:", match.date, "Match Time:", match.time);
-        console.log("Match DateTime (Local):", matchDateTime.toString());
-        console.log("Match End Time (Local):", matchEndTime.toString());
-        console.log("Current Local Time:", currentLocalTime.toString());
-        console.log("Is after start?", currentLocalTime >= matchDateTime);
-        console.log("Is before end?", currentLocalTime < matchEndTime);
-        console.log("Time diff (minutes):", (currentLocalTime.getTime() - matchDateTime.getTime()) / (1000 * 60));
-      }
-
       // Determine status
-      if (currentLocalTime >= matchDateTime && currentLocalTime < matchEndTime) {
+      if (
+        currentLocalTime >= matchDateTime &&
+        currentLocalTime < matchEndTime
+      ) {
         // Match is LIVE
         return MATCH_STATUS.LIVE;
       } else if (currentLocalTime >= matchEndTime) {
@@ -181,7 +182,9 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
       // Update match with new calculated status if it's different
       if (match.status !== calculatedStatus) {
-        console.log(`Match ${match.time} status changed from ${match.status} to ${calculatedStatus}`);
+        console.log(
+          `Match ${match.time} status changed from ${match.status} to ${calculatedStatus}`
+        );
         return { ...match, status: calculatedStatus };
       }
 
@@ -208,16 +211,16 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   // Fixed date change handler with proper state updates
   const handleDateChange = (selectedDate: Date) => {
     console.log("Date picker changed:", selectedDate);
-    
+
     // Update the picker state
     setDate(selectedDate);
-    
+
     // Format date as YYYY-MM-DD for storage (using local time)
     const year = selectedDate.getFullYear();
     const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
     const day = String(selectedDate.getDate()).padStart(2, "0");
     const formattedDate = `${year}-${month}-${day}`;
-    
+
     console.log("Setting matchDate to:", formattedDate);
     setMatchDate(formattedDate);
   };
@@ -225,15 +228,15 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   // Fixed time change handler with proper state updates
   const handleTimeChange = (selectedTime: Date) => {
     console.log("Time picker changed:", selectedTime);
-    
+
     // Update the picker state
     setTime(selectedTime);
-    
+
     // Store in 24-hour format for calculations (HH:MM)
     const hours24 = String(selectedTime.getHours()).padStart(2, "0");
     const minutes = String(selectedTime.getMinutes()).padStart(2, "0");
     const formattedTime = `${hours24}:${minutes}`;
-    
+
     console.log("Setting matchTime to:", formattedTime);
     setMatchTime(formattedTime);
   };
@@ -256,6 +259,145 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     return `${formattedHours}:${minutes} ${ampm}`;
   };
 
+  // New player picker function
+  const openPlayerPicker = async (teamType: "home" | "away") => {
+    console.log("🎯 openPlayerPicker called for:", teamType);
+
+    const teamId = teamType === "home" ? selectedHomeTeam : selectedAwayTeam;
+    console.log("🏷️ Team ID:", teamId);
+
+    if (!teamId) {
+      Alert.alert("Error", `Please select ${teamType} team first`);
+      return;
+    }
+
+    // Simple check
+    console.log("📊 Teams available:", teams?.length || 0);
+
+    // Find the team
+    const team = teams?.find((t) => t.id === teamId || t._id === teamId);
+
+    if (team) {
+      console.log("✅ Found team:", team.name);
+      console.log("👥 Players in team:", team.players?.length || 0);
+
+      // Check if players exist and log first player as example
+      if (team.players && team.players.length > 0) {
+        console.log("🔍 First player example:", {
+          name: team.players[0]?.name,
+          id: team.players[0]?.id || team.players[0]?._id,
+          jersey: team.players[0]?.jerseyNumber || team.players[0]?.jersey,
+          position: team.players[0]?.position,
+        });
+
+        // Prepare players data
+        const playersData = team.players.map((player) => ({
+          ...player,
+          id: player.id || player._id,
+        }));
+
+        console.log("📝 Processed players count:", playersData.length);
+
+        // Set the data and modal state with debugging
+        if (teamType === "home") {
+          console.log("🏠 Setting home team players");
+          setHomeTeamPlayers(playersData);
+        } else {
+          console.log("✈️ Setting away team players");
+          setAwayTeamPlayers(playersData);
+        }
+      } else {
+        console.log("❌ No players found in team");
+        Alert.alert("Error", "No players found for this team");
+      }
+    } else {
+      console.log("❌ Team not found");
+      Alert.alert("Error", "Team not found");
+    }
+  };
+
+  useEffect(() => {
+    console.log(
+      "🎭 Modal state changed - Home:",
+      showHomePlayerPicker,
+      "Away:",
+      showAwayPlayerPicker
+    );
+  }, [showHomePlayerPicker, showAwayPlayerPicker]);
+
+  // Player selection function for dropdown
+  const togglePlayerInSquad = (
+    player: Player,
+    teamType: "home" | "away",
+    position: "main" | "sub"
+  ) => {
+    const currentSquad = teamType === "home" ? homeSquad : awaySquad;
+    const setSquad = teamType === "home" ? setHomeSquad : setAwaySquad;
+
+    if (position === "main") {
+      const isAlreadyMain = currentSquad.mainPlayers.some(
+        (p) => p.id === player.id
+      );
+
+      if (isAlreadyMain) {
+        // Remove from main players
+        setSquad((prev) => ({
+          ...prev,
+          mainPlayers: prev.mainPlayers.filter((p) => p.id !== player.id),
+        }));
+      } else {
+        // Add to main players (max 7)
+        if (currentSquad.mainPlayers.length >= 7) {
+          Alert.alert("Limit Reached", "Maximum 7 main players allowed");
+          return;
+        }
+
+        setSquad((prev) => ({
+          mainPlayers: [...prev.mainPlayers, player],
+          substitutes: prev.substitutes.filter((p) => p.id !== player.id), // Remove from subs if exists
+        }));
+      }
+    } else {
+      const isAlreadySub = currentSquad.substitutes.some(
+        (p) => p.id === player.id
+      );
+
+      if (isAlreadySub) {
+        // Remove from substitutes
+        setSquad((prev) => ({
+          ...prev,
+          substitutes: prev.substitutes.filter((p) => p.id !== player.id),
+        }));
+      } else {
+        // Add to substitutes (max 3)
+        if (currentSquad.substitutes.length >= 3) {
+          Alert.alert("Limit Reached", "Maximum 3 substitutes allowed");
+          return;
+        }
+
+        setSquad((prev) => ({
+          substitutes: [...prev.substitutes, player],
+          mainPlayers: prev.mainPlayers.filter((p) => p.id !== player.id), // Remove from main if exists
+        }));
+      }
+    }
+  };
+
+  // Check if player is selected
+  const isPlayerInSquad = (
+    player: Player,
+    teamType: "home" | "away",
+    position: "main" | "sub"
+  ) => {
+    const currentSquad = teamType === "home" ? homeSquad : awaySquad;
+
+    if (position === "main") {
+      return currentSquad.mainPlayers.some((p) => p.id === player.id);
+    } else {
+      return currentSquad.substitutes.some((p) => p.id === player.id);
+    }
+  };
+
   // Updated form reset function
   const resetScheduleForm = () => {
     setSelectedHomeTeam("");
@@ -264,12 +406,22 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     setMatchTime("");
     setVenue("Football Arena");
     setSelectedWeek(1);
-    
+
+    // Reset squad selections
+    setHomeSquad({ mainPlayers: [], substitutes: [] });
+    setAwaySquad({ mainPlayers: [], substitutes: [] });
+
+    // Reset dropdown states
+    setShowHomePlayerPicker(false);
+    setShowAwayPlayerPicker(false);
+    setHomeTeamPlayers([]);
+    setAwayTeamPlayers([]);
+
     // Reset picker states to current date/time
     const now = new Date();
     setDate(now);
     setTime(now);
-    
+
     console.log("Form reset completed");
   };
 
@@ -279,6 +431,8 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       awayTeam: selectedAwayTeam,
       date: matchDate,
       time: matchTime,
+      homeSquad,
+      awaySquad,
     });
 
     if (!selectedHomeTeam || !selectedAwayTeam || !matchDate || !matchTime) {
@@ -288,6 +442,27 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
     if (selectedHomeTeam === selectedAwayTeam) {
       Alert.alert("Error", "Home and away teams cannot be the same");
+      return;
+    }
+
+    // Validate squad selections
+    if (homeSquad.mainPlayers.length !== 7) {
+      Alert.alert("Squad Error", "Home team must have exactly 7 main players");
+      return;
+    }
+
+    if (awaySquad.mainPlayers.length !== 7) {
+      Alert.alert("Squad Error", "Away team must have exactly 7 main players");
+      return;
+    }
+
+    if (homeSquad.substitutes.length !== 3) {
+      Alert.alert("Squad Error", "Home team must have exactly 3 substitutes");
+      return;
+    }
+
+    if (awaySquad.substitutes.length !== 3) {
+      Alert.alert("Squad Error", "Away team must have exactly 3 substitutes");
       return;
     }
 
@@ -305,6 +480,14 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       venue,
       week: selectedWeek,
       status: MATCH_STATUS.UPCOMING, // Default to upcoming, status will be recalculated
+      homeSquad: {
+        mainPlayers: homeSquad.mainPlayers.map((p) => p.id),
+        substitutes: homeSquad.substitutes.map((p) => p.id),
+      },
+      awaySquad: {
+        mainPlayers: awaySquad.mainPlayers.map((p) => p.id),
+        substitutes: awaySquad.substitutes.map((p) => p.id),
+      },
     };
 
     console.log("Scheduling match with data:", matchData);
@@ -405,7 +588,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   // Calculate elapsed time for live matches
-  const calculateElapsedTime = (dateStr, timeStr) => {
+  const calculateElapsedTime = (dateStr: string, timeStr: string) => {
     if (!dateStr || !timeStr) return "0'";
 
     try {
@@ -449,7 +632,41 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
   };
 
   // Render a match card
-  const renderMatchCard = (match) => {
+  const renderMatchCard = (match: {
+    homeTeamId: string;
+    awayTeamId: string;
+    status: string;
+    id: any;
+    week: any;
+    date: string;
+    time: string;
+    homeScore: any;
+    awayScore: any;
+    venue:
+      | string
+      | number
+      | bigint
+      | boolean
+      | React.ReactElement<unknown, string | React.JSXElementConstructor<any>>
+      | Iterable<React.ReactNode>
+      | React.ReactPortal
+      | Promise<
+          | string
+          | number
+          | bigint
+          | boolean
+          | React.ReactPortal
+          | React.ReactElement<
+              unknown,
+              string | React.JSXElementConstructor<any>
+            >
+          | Iterable<React.ReactNode>
+          | null
+          | undefined
+        >
+      | null
+      | undefined;
+  }) => {
     const homeTeam = getTeamInfo(match.homeTeamId);
     const awayTeam = getTeamInfo(match.awayTeamId);
     const isLive = match.status === MATCH_STATUS.LIVE;
@@ -554,7 +771,9 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         </View>
 
         <View style={styles.matchDetails}>
-          <Text style={styles.matchTime}>🕐 {formatTimeForDisplay(match.time)}</Text>
+          <Text style={styles.matchTime}>
+            🕐 {formatTimeForDisplay(match.time)}
+          </Text>
           <Text style={styles.matchVenue}>📍 {match.venue}</Text>
         </View>
 
@@ -567,18 +786,6 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <Text style={styles.watchLiveButtonText}>UPDATE THE MATCH</Text>
             <Ionicons name="chevron-forward" size={16} color={COLORS.white} />
           </TouchableOpacity>
-        )}
-
-        {/* Debug information for current time matches */}
-        {(match.time === "20:56" || match.time === "20:57") && (
-          <View style={styles.matchDebug}>
-            <Text style={styles.debugText}>
-              🐛 DEBUG: {match.date} {match.time}
-              {"\n"}Current: {getCurrentTimeForDisplay()}
-              {"\n"}Status: {match.status}
-              {"\n"}Should be: {getMatchStatus(match)}
-            </Text>
-          </View>
         )}
       </View>
     );
@@ -597,13 +804,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         {user?.role === "management" && (
           <TouchableOpacity
             style={styles.addButton}
-            onPress={openScheduleModal} // Use the new function
+            onPress={openScheduleModal}
           >
             <Ionicons name="add" size={24} color={COLORS.primary} />
           </TouchableOpacity>
         )}
       </View>
-
+      
       {/* Current time display with local time */}
       <View style={styles.currentTimeBar}>
         <View style={styles.currentTimeDisplay}>
@@ -623,15 +830,14 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           </Text>
         </TouchableOpacity>
       </View>
-
+      
       <ScrollView style={styles.content}>
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>📅 Match Status Logic</Text>
           <Text style={styles.infoText}>
-            • UPCOMING: Before match start time{"\n"}
-            • LIVE: From start time to +72 minutes (1.2 hours){"\n"}
-            • COMPLETED: After 72 minutes from start{"\n"}
-            • Current Time: {getCurrentTimeForDisplay()}
+            • UPCOMING: Before match start time{"\n"}• LIVE: From start time to
+            +72 minutes (1.2 hours){"\n"}• COMPLETED: After 72 minutes from
+            start{"\n"}• Current Time: {getCurrentTimeForDisplay()}
           </Text>
         </View>
 
@@ -759,7 +965,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           selectedHomeTeam === team._id) &&
                           styles.selectedTeamPickerItem,
                       ]}
-                      onPress={() => setSelectedHomeTeam(team.id || team._id)}
+                      onPress={() => {
+                        setSelectedHomeTeam(team.id || team._id);
+                        // Reset home squad when changing team
+                        setHomeSquad({ mainPlayers: [], substitutes: [] });
+                        setShowHomePlayerPicker(false);
+                        setHomeTeamPlayers([]);
+                      }}
                     >
                       {team.logo ? (
                         <Image
@@ -808,7 +1020,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           selectedAwayTeam === team._id) &&
                           styles.selectedTeamPickerItem,
                       ]}
-                      onPress={() => setSelectedAwayTeam(team.id || team._id)}
+                      onPress={() => {
+                        setSelectedAwayTeam(team.id || team._id);
+                        // Reset away squad when changing team
+                        setAwaySquad({ mainPlayers: [], substitutes: [] });
+                        setShowAwayPlayerPicker(false);
+                        setAwayTeamPlayers([]);
+                      }}
                     >
                       {team.logo ? (
                         <Image
@@ -841,10 +1059,343 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 </ScrollView>
               </View>
 
+              {/* Squad Selection with Inline Dropdown */}
+              <View style={styles.squadSelectionSection}>
+                <Text style={styles.inputLabel}>Playing Squads:</Text>
+
+                {/* HOME SQUAD DROPDOWN */}
+                <View style={styles.squadContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.squadButton,
+                      !selectedHomeTeam && styles.squadButtonDisabled,
+                      homeSquad.mainPlayers.length === 7 &&
+                        homeSquad.substitutes.length === 3 &&
+                        styles.squadButtonComplete,
+                    ]}
+                    onPress={() => {
+                      if (!selectedHomeTeam) {
+                        Alert.alert("Error", "Please select home team first");
+                        return;
+                      }
+                      console.log("🏠 Home squad button pressed");
+                      openPlayerPicker("home");
+                      setShowHomePlayerPicker(!showHomePlayerPicker); // Toggle dropdown
+                    }}
+                    disabled={!selectedHomeTeam}
+                  >
+                    <View style={styles.squadButtonContent}>
+                      <Ionicons
+                        name="people-outline"
+                        size={20}
+                        color={
+                          !selectedHomeTeam
+                            ? COLORS.gray
+                            : homeSquad.mainPlayers.length === 7 &&
+                              homeSquad.substitutes.length === 3
+                            ? COLORS.green
+                            : COLORS.primary
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.squadButtonText,
+                          !selectedHomeTeam && styles.squadButtonTextDisabled,
+                          homeSquad.mainPlayers.length === 7 &&
+                            homeSquad.substitutes.length === 3 &&
+                            styles.squadButtonTextComplete,
+                        ]}
+                      >
+                        Home Squad (
+                        {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/10)
+                      </Text>
+                      <Ionicons
+                        name={showHomePlayerPicker ? "chevron-up" : "chevron-down"}
+                        size={16}
+                        color={!selectedHomeTeam ? COLORS.gray : COLORS.primary}
+                      />
+                    </View>
+                    <Text style={styles.squadButtonSubtext}>
+                      Main: {homeSquad.mainPlayers.length}/7 • Sub:{" "}
+                      {homeSquad.substitutes.length}/3
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* HOME PLAYER DROPDOWN LIST */}
+                  {showHomePlayerPicker && homeTeamPlayers.length > 0 && (
+                    <View style={styles.playerDropdown}>
+                      <View style={styles.dropdownHeader}>
+                        <Text style={styles.dropdownTitle}>
+                          Select Home Team Players ({homeTeamPlayers.length} available)
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => setShowHomePlayerPicker(false)}
+                          style={styles.dropdownCloseButton}
+                        >
+                          <Ionicons name="close" size={16} color={COLORS.primary} />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      <ScrollView 
+                        style={styles.playerDropdownList} 
+                        nestedScrollEnabled={true}
+                        showsVerticalScrollIndicator={false}
+                      >
+                        {homeTeamPlayers.map((player, index) => {
+                          const isMainSelected = isPlayerInSquad(player, "home", "main");
+                          const isSubSelected = isPlayerInSquad(player, "home", "sub");
+                          
+                          return (
+                            <View key={player.id || index} style={styles.playerDropdownItem}>
+                              {/* Player Info */}
+                              <View style={styles.playerDropdownInfo}>
+                                <View style={styles.playerDropdownAvatar}>
+                                  <Text style={styles.playerDropdownNumber}>
+                                    #{player.jersey || player.jerseyNumber || index + 1}
+                                  </Text>
+                                </View>
+                                <View style={styles.playerDropdownDetails}>
+                                  <Text style={styles.playerDropdownName}>
+                                    {player.name || `Player ${index + 1}`}
+                                  </Text>
+                                  <Text style={styles.playerDropdownPosition}>
+                                    {player.position || 'Forward'}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Selection Buttons */}
+                              <View style={styles.playerDropdownButtons}>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.playerDropdownButton,
+                                    styles.mainPlayerButton,
+                                    isMainSelected && styles.playerDropdownButtonSelected,
+                                    homeSquad.mainPlayers.length >= 7 && !isMainSelected && styles.playerDropdownButtonDisabled
+                                  ]}
+                                  onPress={() => {
+                                    console.log("Main button pressed for:", player.name);
+                                    togglePlayerInSquad(player, "home", "main");
+                                  }}
+                                  disabled={homeSquad.mainPlayers.length >= 7 && !isMainSelected}
+                                >
+                                  <Text style={[
+                                    styles.playerDropdownButtonText,
+                                    isMainSelected && styles.playerDropdownButtonTextSelected
+                                  ]}>
+                                    Main
+                                  </Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  style={[
+                                    styles.playerDropdownButton,
+                                    styles.subPlayerButton,
+                                    isSubSelected && styles.playerDropdownButtonSelectedSub,
+                                    homeSquad.substitutes.length >= 3 && !isSubSelected && styles.playerDropdownButtonDisabled
+                                  ]}
+                                  onPress={() => {
+                                    console.log("Sub button pressed for:", player.name);
+                                    togglePlayerInSquad(player, "home", "sub");
+                                  }}
+                                  disabled={homeSquad.substitutes.length >= 3 && !isSubSelected}
+                                >
+                                  <Text style={[
+                                    styles.playerDropdownButtonText,
+                                    { color: COLORS.blue },
+                                    isSubSelected && { color: COLORS.white }
+                                  ]}>
+                                    Sub
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </ScrollView>
+                      
+                      {/* Dropdown Footer */}
+                      <View style={styles.dropdownFooter}>
+                        <Text style={styles.dropdownFooterText}>
+                          Selected: {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/10 players
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {/* AWAY SQUAD DROPDOWN */}
+                <View style={styles.squadContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.squadButton,
+                      !selectedAwayTeam && styles.squadButtonDisabled,
+                      awaySquad.mainPlayers.length === 7 &&
+                        awaySquad.substitutes.length === 3 &&
+                        styles.squadButtonComplete,
+                    ]}
+                    onPress={() => {
+                      if (!selectedAwayTeam) {
+                        Alert.alert("Error", "Please select away team first");
+                        return;
+                      }
+                      console.log("✈️ Away squad button pressed");
+                      openPlayerPicker("away");
+                      setShowAwayPlayerPicker(!showAwayPlayerPicker); // Toggle dropdown
+                    }}
+                    disabled={!selectedAwayTeam}
+                  >
+                    <View style={styles.squadButtonContent}>
+                      <Ionicons
+                        name="people-outline"
+                        size={20}
+                        color={
+                          !selectedAwayTeam
+                            ? COLORS.gray
+                            : awaySquad.mainPlayers.length === 7 &&
+                              awaySquad.substitutes.length === 3
+                            ? COLORS.green
+                            : COLORS.primary
+                        }
+                      />
+                      <Text
+                        style={[
+                          styles.squadButtonText,
+                          !selectedAwayTeam && styles.squadButtonTextDisabled,
+                          awaySquad.mainPlayers.length === 7 &&
+                            awaySquad.substitutes.length === 3 &&
+                            styles.squadButtonTextComplete,
+                        ]}
+                      >
+                        Away Squad (
+                        {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/10)
+                      </Text>
+                      <Ionicons
+                        name={showAwayPlayerPicker ? "chevron-up" : "chevron-down"}
+                        size={16}
+                        color={!selectedAwayTeam ? COLORS.gray : COLORS.primary}
+                      />
+                    </View>
+                    <Text style={styles.squadButtonSubtext}>
+                      Main: {awaySquad.mainPlayers.length}/7 • Sub:{" "}
+                      {awaySquad.substitutes.length}/3
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* AWAY PLAYER DROPDOWN LIST */}
+                  {showAwayPlayerPicker && awayTeamPlayers.length > 0 && (
+                    <View style={styles.playerDropdown}>
+                      <View style={styles.dropdownHeader}>
+                        <Text style={styles.dropdownTitle}>
+                          Select Away Team Players ({awayTeamPlayers.length} available)
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => setShowAwayPlayerPicker(false)}
+                          style={styles.dropdownCloseButton}
+                        >
+                          <Ionicons name="close" size={16} color={COLORS.primary} />
+                        </TouchableOpacity>
+                      </View>
+                      
+                      <ScrollView 
+                        style={styles.playerDropdownList} 
+                        nestedScrollEnabled={true}
+                        showsVerticalScrollIndicator={false}
+                      >
+                        {awayTeamPlayers.map((player, index) => {
+                          const isMainSelected = isPlayerInSquad(player, "away", "main");
+                          const isSubSelected = isPlayerInSquad(player, "away", "sub");
+                          
+                          return (
+                            <View key={player.id || index} style={styles.playerDropdownItem}>
+                              {/* Player Info */}
+                              <View style={styles.playerDropdownInfo}>
+                                <View style={styles.playerDropdownAvatar}>
+                                  <Text style={styles.playerDropdownNumber}>
+                                    #{player.jersey || player.jerseyNumber || index + 1}
+                                  </Text>
+                                </View>
+                                <View style={styles.playerDropdownDetails}>
+                                  <Text style={styles.playerDropdownName}>
+                                    {player.name || `Player ${index + 1}`}
+                                  </Text>
+                                  <Text style={styles.playerDropdownPosition}>
+                                    {player.position || 'Forward'}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Selection Buttons */}
+                              <View style={styles.playerDropdownButtons}>
+                                <TouchableOpacity
+                                  style={[
+                                    styles.playerDropdownButton,
+                                    styles.mainPlayerButton,
+                                    isMainSelected && styles.playerDropdownButtonSelected,
+                                    awaySquad.mainPlayers.length >= 7 && !isMainSelected && styles.playerDropdownButtonDisabled
+                                  ]}
+                                  onPress={() => {
+                                    console.log("Main button pressed for:", player.name);
+                                    togglePlayerInSquad(player, "away", "main");
+                                  }}
+                                  disabled={awaySquad.mainPlayers.length >= 7 && !isMainSelected}
+                                >
+                                  <Text style={[
+                                    styles.playerDropdownButtonText,
+                                    isMainSelected && styles.playerDropdownButtonTextSelected
+                                  ]}>
+                                    Main
+                                  </Text>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  style={[
+                                    styles.playerDropdownButton,
+                                    styles.subPlayerButton,
+                                    isSubSelected && styles.playerDropdownButtonSelectedSub,
+                                    awaySquad.substitutes.length >= 3 && !isSubSelected && styles.playerDropdownButtonDisabled
+                                  ]}
+                                  onPress={() => {
+                                    console.log("Sub button pressed for:", player.name);
+                                    togglePlayerInSquad(player, "away", "sub");
+                                  }}
+                                  disabled={awaySquad.substitutes.length >= 3 && !isSubSelected}
+                                >
+                                  <Text style={[
+                                    styles.playerDropdownButtonText,
+                                    { color: COLORS.blue },
+                                    isSubSelected && { color: COLORS.white }
+                                  ]}>
+                                    Sub
+                                  </Text>
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </ScrollView>
+                      
+                      {/* Dropdown Footer */}
+                      <View style={styles.dropdownFooter}>
+                        <Text style={styles.dropdownFooterText}>
+                          Selected: {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/10 players
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </View>
+
               <View style={styles.dateTimeSection}>
                 <Text style={styles.inputLabel}>
-                  Match Date: {matchDate ? `(${matchDate})` : "(Not selected)"}
+                  Match Date:{" "}
+                  {matchDate ? (
+                    `(${matchDate})`
+                  ) : (
+                    <Text style={{ color: "gray" }}>(Not selected)</Text>
+                  )}
                 </Text>
+
                 <CustomDateTimePicker
                   mode="date"
                   value={date}
@@ -855,7 +1406,12 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
               <View style={styles.dateTimeSection}>
                 <Text style={styles.inputLabel}>
-                  Match Time: {matchTime ? `(${formatTimeForDisplay(matchTime)})` : "(Not selected)"}
+                  Match Time:{" "}
+                  {matchTime ? (
+                    `(${formatTimeForDisplay(matchTime)})`
+                  ) : (
+                    <Text style={{ color: "gray" }}>(Not selected)</Text>
+                  )}
                 </Text>
                 <CustomDateTimePicker
                   mode="time"
@@ -867,35 +1423,32 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
               <View style={styles.dateTimeSection}>
                 <Text style={styles.inputLabel}>Venue (Fixed)</Text>
-                <View style={[
-                  styles.venueContainer,
-                  // Apply same styling logic as date/time pickers
-                  (matchDate && matchTime) ? styles.venueContainerActive : styles.venueContainerInactive
-                ]}>
-                  <Text style={[
-                    styles.venueText,
-                    // Change text color based on whether date/time are selected
-                    (matchDate && matchTime) ? styles.venueTextActive : styles.venueTextInactive
-                  ]}>
+                <View
+                  style={[
+                    styles.venueContainer,
+                    matchDate && matchTime
+                      ? styles.venueContainerActive
+                      : styles.venueContainerInactive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.venueText,
+                      matchDate && matchTime
+                        ? styles.venueTextActive
+                        : styles.venueTextInactive,
+                    ]}
+                  >
                     Football Arena
                   </Text>
-                  <Ionicons 
-                    name="location" 
-                    size={20} 
-                    color={(matchDate && matchTime) ? COLORS.primary : COLORS.gray} 
+                  <Ionicons
+                    name="location"
+                    size={20}
+                    color={
+                      matchDate && matchTime ? COLORS.primary : COLORS.gray
+                    }
                   />
                 </View>
-              </View>
-
-              {/* Debug section to show current values */}
-              <View style={styles.debugSection}>
-                <Text style={styles.debugLabel}>Debug Info:</Text>
-                <Text style={styles.debugText}>
-                  Selected Date: {matchDate || "None"}{"\n"}
-                  Selected Time: {matchTime || "None"}{"\n"}
-                  Home Team: {selectedHomeTeam || "None"}{"\n"}
-                  Away Team: {selectedAwayTeam || "None"}
-                </Text>
               </View>
 
               <View style={styles.modalButtons}>
@@ -1047,7 +1600,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   liveSectionTitle: {
-    color: "#ff4500", // Bright orange for live matches
+    color: "#ff4500",
     fontSize: 18,
     fontWeight: "bold",
   },
@@ -1084,7 +1637,7 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     padding: 20,
     marginBottom: 15,
-    position: "relative", // For absolute positioned overlay
+    position: "relative",
   },
   liveMatchCard: {
     borderWidth: 2,
@@ -1120,10 +1673,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   liveBadge: {
-    backgroundColor: "#ff4500", // Bright orange for live
+    backgroundColor: "#ff4500",
   },
   completedBadge: {
-    backgroundColor: "#4CAF50", // Green for completed
+    backgroundColor: "#4CAF50",
   },
   statusBadgeText: {
     color: COLORS.black,
@@ -1150,7 +1703,7 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
     marginBottom: 5,
-    backgroundColor: COLORS.background, // Add background to ensure visibility
+    backgroundColor: COLORS.background,
   },
   liveTeamLogo: {
     width: 50,
@@ -1199,7 +1752,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 10,
   },
-  liveTime: {
+    liveTime: {
     color: "#ff4500",
     fontSize: 14,
     fontWeight: "bold",
@@ -1351,6 +1904,175 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     fontWeight: "bold",
   },
+  // Squad Selection Styles
+  squadSelectionSection: {
+    marginBottom: 20,
+  },
+  squadContainer: {
+    marginBottom: 15,
+  },
+  squadButton: {
+    backgroundColor: COLORS.black,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 10,
+  },
+  squadButtonDisabled: {
+    borderColor: COLORS.gray,
+    opacity: 0.5,
+  },
+  squadButtonComplete: {
+    borderColor: COLORS.green,
+    backgroundColor: "rgba(76, 175, 80, 0.1)",
+  },
+  squadButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  squadButtonText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: "bold",
+    flex: 1,
+    marginLeft: 10,
+  },
+  squadButtonTextDisabled: {
+    color: COLORS.gray,
+  },
+  squadButtonTextComplete: {
+    color: COLORS.green,
+  },
+  squadButtonSubtext: {
+    color: COLORS.gray,
+    fontSize: 12,
+    marginTop: 5,
+    marginLeft: 30,
+  },
+  // Dropdown Styles
+  playerDropdown: {
+    backgroundColor: COLORS.black,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    borderRadius: 10,
+    marginTop: 10,
+    overflow: 'hidden',
+    maxHeight: 300, // Limit height so modal doesn't overflow
+  },
+  dropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray,
+  },
+  dropdownTitle: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: 'bold',
+    flex: 1,
+  },
+  dropdownCloseButton: {
+    padding: 4,
+  },
+  playerDropdownList: {
+    maxHeight: 200,
+    backgroundColor: COLORS.black,
+  },
+  playerDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  playerDropdownInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  playerDropdownAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  playerDropdownNumber: {
+    color: COLORS.black,
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  playerDropdownDetails: {
+    flex: 1,
+  },
+  playerDropdownName: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  playerDropdownPosition: {
+    color: COLORS.gray,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  playerDropdownButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  playerDropdownButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginLeft: 6,
+    borderWidth: 1,
+    minWidth: 38,
+    alignItems: 'center',
+  },
+  mainPlayerButton: {
+    borderColor: COLORS.primary,
+    backgroundColor: 'transparent',
+  },
+  subPlayerButton: {
+    borderColor: COLORS.blue,
+    backgroundColor: 'transparent',
+  },
+  playerDropdownButtonSelected: {
+    backgroundColor: COLORS.primary,
+  },
+  playerDropdownButtonSelectedSub: {
+    backgroundColor: COLORS.blue,
+  },
+  playerDropdownButtonText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+  },
+  playerDropdownButtonTextSelected: {
+    color: COLORS.black,
+  },
+  playerDropdownButtonDisabled: {
+    opacity: 0.3,
+  },
+  dropdownFooter: {
+    backgroundColor: 'rgba(255, 215, 0, 0.05)',
+    padding: 10,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.gray,
+  },
+  dropdownFooterText: {
+    color: COLORS.gray,
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
   modalButtons: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1383,7 +2105,6 @@ const styles = StyleSheet.create({
   dateTimeSection: {
     marginBottom: 20,
   },
-  // Updated venue container styles with conditional styling
   venueContainer: {
     borderWidth: 1,
     borderRadius: 10,
@@ -1394,48 +2115,27 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.black,
   },
   venueContainerActive: {
-    borderColor: COLORS.primary, // Golden/yellow border when active
+    borderColor: COLORS.primary,
   },
   venueContainerInactive: {
-    borderColor: COLORS.gray, // Gray border when inactive
+    borderColor: COLORS.gray,
   },
   venueText: {
     fontSize: 16,
   },
   venueTextActive: {
-    color: COLORS.primary, // Golden/yellow text when active
+    color: COLORS.primary,
   },
   venueTextInactive: {
-    color: COLORS.gray, // Gray text when inactive
-  },
-  // Debug styles
-  matchDebug: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: "rgba(255,255,0,0.1)",
-    borderWidth: 1,
-    borderColor: "#FFD700",
-    borderRadius: 5,
+    color: COLORS.gray,
   },
   debugText: {
     color: "#FFD700",
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: "monospace",
-  },
-  debugSection: {
-    marginBottom: 15,
-    padding: 10,
-    backgroundColor: "rgba(0,255,0,0.1)",
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: "#00FF00",
-  },
-  debugLabel: {
-    color: "#00FF00",
-    fontSize: 14,
+    marginTop: 3,
+    textAlign: "center",
     fontWeight: "bold",
-    marginBottom: 5,
   },
 });
-
 export default ScheduleMatchScreen;

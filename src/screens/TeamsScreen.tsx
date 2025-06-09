@@ -228,7 +228,7 @@ const TeamsScreen: React.FC = () => {
           <View style={styles.teamInfo}>
             <Text style={styles.teamName}>{team.name}</Text>
             <Text style={styles.teamStats}>
-              {team.players.length}/11 Players • {teamStats.points} Points
+              {team.players.length} Players • {teamStats.points} Points
             </Text>
           </View>
           <View style={styles.teamActions}>
@@ -423,9 +423,6 @@ const TeamsScreen: React.FC = () => {
   }
 
   if (selectedTeam) {
-    const mainPlayers = selectedTeam.players.filter((p) => !p.isSubstitute)
-    const substitutes = selectedTeam.players.filter((p) => p.isSubstitute)
-    
     // Calculate team statistics
     const teamStats = calculateTeamStats(selectedTeam.id);
 
@@ -445,9 +442,9 @@ const TeamsScreen: React.FC = () => {
           {user?.role === "management" && (
             <TouchableOpacity style={styles.editToggleButton} onPress={() => setEditMode(!editMode)}>
               <Ionicons
-                name={teamEditMode ? "checkmark-outline" : "create-outline"}
+                name={editMode ? "checkmark-outline" : "create-outline"}
                 size={24}
-                color={teamEditMode ? COLORS.green : COLORS.primary}
+                color={editMode ? COLORS.green : COLORS.primary}
               />
             </TouchableOpacity>
           )}
@@ -511,19 +508,9 @@ const TeamsScreen: React.FC = () => {
           </View>
 
           <View style={styles.playersSection}>
-            <Text style={styles.sectionTitle}>Playing Squad ({mainPlayers.length}/7 Players)</Text>
+            <Text style={styles.sectionTitle}>All Players ({selectedTeam.players.length})</Text>
             <FlatList
-              data={mainPlayers}
-              renderItem={renderPlayerCard}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-            />
-          </View>
-
-          <View style={styles.playersSection}>
-            <Text style={styles.sectionTitle}>Substitutes ({substitutes.length}/3 Players)</Text>
-            <FlatList
-              data={substitutes}
+              data={selectedTeam.players}
               renderItem={renderPlayerCard}
               keyExtractor={(item) => item.id}
               scrollEnabled={false}

@@ -29,7 +29,7 @@ const MATCH_STATUS = {
   UPCOMING: "upcoming",
   LIVE: "live",
   COMPLETED: "completed",
-}
+} as const
 
 interface TournamentContextType {
   tournament: Tournament | null
@@ -44,7 +44,7 @@ interface TournamentContextType {
   updateTeam: (teamId: string, updates: Partial<Team>) => Promise<void>
   addPlayer: (player: Omit<Player, "id">) => Promise<void>
   scheduleMatch: (matchData: ScheduleMatchData) => Promise<void>
-  getMatchStatus: (matchDateTime: string) => string
+  getMatchStatus: (matchDateTime: string) => "upcoming" | "live" | "completed"
 }
 
 const TournamentContext = createContext<TournamentContextType | undefined>(undefined)
@@ -65,7 +65,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [lastRefresh, setLastRefresh] = useState<number>(0)
 
   // Function to determine match status based on date and time
-  const getMatchStatus = useCallback((matchDateTime: string): string => {
+  const getMatchStatus = useCallback((matchDateTime: string): "upcoming" | "live" | "completed" => {
     const currentTime = new Date()
     const matchTime = new Date(matchDateTime)
 
@@ -116,7 +116,7 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     console.log("API Response - Tournament Data:", data);
     
     // Ensure team IDs are consistent
-    const processedTeams = (data.teams || []).map(team => ({
+    const processedTeams = (data.teams || []).map((team: { _id: any; id: any; players: any }) => ({
       ...team,
       id: team._id || team.id, // Ensure id is always set
       _id: team._id || team.id, // Ensure _id is also always set
@@ -136,8 +136,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         id: match._id || match.id, // Ensure id is always set
         _id: match._id || match.id, // Ensure _id is also always set
         // Make sure team IDs match the format expected
-        homeTeamId: typeof match.homeTeamId === 'object' && match.homeTeamId !== null ? match.homeTeamId._id : match.homeTeamId,
-        awayTeamId: typeof match.awayTeamId === 'object' && match.awayTeamId !== null ? match.awayTeamId._id : match.awayTeamId
+        homeTeamId: typeof match.homeTeamId === 'object' && match.homeTeamId !== null ? (match.homeTeamId as any)._id : match.homeTeamId,
+        awayTeamId: typeof match.awayTeamId === 'object' && match.awayTeamId !== null ? (match.awayTeamId as any)._id : match.awayTeamId
       };
       
       // If match is already marked as completed, respect that status
