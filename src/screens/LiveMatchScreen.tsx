@@ -22,31 +22,40 @@ import { useMatchStats } from "../../hooks/useMatchStats";
 import MatchStatsPanel from "../../components/MatchStatsPanel";
 import LiveMatchTimer from "../../components/LiveMatchTimer";
 
-// Current time from user: 2025-06-09 09:21:40
-const CURRENT_TIME = new Date("2025-06-09T09:21:40Z");
+// Current time from user: 2025-06-11 10:52:15
+const CURRENT_TIME = new Date("2025-06-11T10:52:15Z");
 
-const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
+const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
+  navigation,
+}) => {
   const { user } = useAuth();
-  const { tournament, matches, teams, updateMatch, updateMatchStatus, updateMatchStats } = useTournament();
-  
+  const {
+    tournament,
+    matches,
+    teams,
+    updateMatch,
+    updateMatchStatus,
+    updateMatchStats,
+  } = useTournament();
+
   // Match selection and data
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [homeTeam, setHomeTeam] = useState<any>(null);
   const [awayTeam, setAwayTeam] = useState<any>(null);
   const [homeTeamPlayers, setHomeTeamPlayers] = useState<any[]>([]);
   const [awayTeamPlayers, setAwayTeamPlayers] = useState<any[]>([]);
-  
+
   // Match events and scores
   const [matchEvents, setMatchEvents] = useState<MatchEvent[]>([]);
   const [homeScore, setHomeScore] = useState(0);
   const [awayScore, setAwayScore] = useState(0);
-  
+
   // Timer states
   const [currentMinute, setCurrentMinute] = useState(0);
   const [currentSeconds, setCurrentSeconds] = useState(0);
   const [isHalfTime, setIsHalfTime] = useState(false);
   const [matchStartTime, setMatchStartTime] = useState<Date | null>(null);
-  
+
   // UI states
   const [showPlayerModal, setShowPlayerModal] = useState(false);
   const [showSubstitutionModal, setShowSubstitutionModal] = useState(false);
@@ -55,15 +64,15 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
   const [eventType, setEventType] = useState("");
   const [selectedTeam, setSelectedTeam] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // User info
-  const [username, setUsername] = useState('vishal-04-singh');
+  const [username, setUsername] = useState("vishal-04-singh");
 
   // Get live matches
   const liveMatches = matches?.filter((match) => match.status === "live") || [];
-  
+
   // Get current match
-  const currentMatch = selectedMatchId 
+  const currentMatch = selectedMatchId
     ? matches?.find((match) => match.id === selectedMatchId)
     : liveMatches[0];
 
@@ -75,7 +84,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
     unlockStats,
     resetStats,
     isLocked: statsLocked,
-    lastUpdate
+    lastUpdate,
   } = useMatchStats(currentMatch?.id || null, {
     homeScore,
     awayScore,
@@ -86,59 +95,94 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
   useEffect(() => {
     if (!selectedMatchId && liveMatches.length > 0) {
       setSelectedMatchId(liveMatches[0].id);
-    }
-    else if (selectedMatchId && !liveMatches.find(m => m.id === selectedMatchId)) {
+    } else if (
+      selectedMatchId &&
+      !liveMatches.find((m) => m.id === selectedMatchId)
+    ) {
       setSelectedMatchId(liveMatches.length > 0 ? liveMatches[0].id : null);
     }
   }, [liveMatches, selectedMatchId]);
 
-  // Load match data
+  // Load match data and initialize scores
   useEffect(() => {
     if (currentMatch) {
-      setHomeScore(currentMatch.homeScore || 0);
-      setAwayScore(currentMatch.awayScore || 0);
+      // Calculate scores from events
+      let homeGoals = 0;
+      let awayGoals = 0;
+
+      (currentMatch.events || []).forEach((event) => {
+        if (event.type === "goal") {
+          if (event.team === currentMatch.homeTeamId) {
+            homeGoals++;
+          } else {
+            awayGoals++;
+          }
+        }
+      });
+
+      // Set scores based on events
+      setHomeScore(homeGoals);
+      setAwayScore(awayGoals);
       setMatchEvents(currentMatch.events || []);
-      
+
+      // Update stats
+      updateStat({
+        statType: "homeScore",
+        team: "home",
+        value: homeGoals,
+        increment: false,
+      });
+      updateStat({
+        statType: "awayScore",
+        team: "away",
+        value: awayGoals,
+        increment: false,
+      });
+
       // Find teams
-      const home = teams?.find((team) => 
-        team.id === currentMatch.homeTeamId || 
-        team._id === currentMatch.homeTeamId ||
-        String(team.id) === String(currentMatch.homeTeamId)
+      const home = teams?.find(
+        (team) =>
+          team.id === currentMatch.homeTeamId ||
+          team._id === currentMatch.homeTeamId ||
+          String(team.id) === String(currentMatch.homeTeamId)
       );
-      
-      const away = teams?.find((team) => 
-        team.id === currentMatch.awayTeamId ||
-        team._id === currentMatch.awayTeamId ||
-        String(team.id) === String(currentMatch.awayTeamId)
+
+      const away = teams?.find(
+        (team) =>
+          team.id === currentMatch.awayTeamId ||
+          team._id === currentMatch.awayTeamId ||
+          String(team.id) === String(currentMatch.awayTeamId)
       );
-      
+
       setHomeTeam(home);
       setAwayTeam(away);
-      
+
       // Get players for both teams
       if (home) {
         setHomeTeamPlayers(home.players || []);
       }
-      
+
       if (away) {
         setAwayTeamPlayers(away.players || []);
       }
-      
+
       // Set up match timer
       if (currentMatch.date && currentMatch.time) {
-        const matchDateTime = new Date(`${currentMatch.date}T${currentMatch.time}`);
+        const matchDateTime = new Date(
+          `${currentMatch.date}T${currentMatch.time}`
+        );
         setMatchStartTime(matchDateTime);
       }
 
       // Lock stats if match is completed
-      if (currentMatch.status === 'completed') {
+      if (currentMatch.status === "completed") {
         lockStats();
       } else {
         unlockStats();
       }
     }
   }, [currentMatch, teams, lockStats, unlockStats]);
-  
+
   // Get username from current user
   useEffect(() => {
     if (user?.name) {
@@ -148,7 +192,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
 
   // Handle match completion
   useEffect(() => {
-    if (currentMatch && currentMatch.status === 'completed') {
+    if (currentMatch && currentMatch.status === "completed") {
       lockStats();
     }
   }, [currentMatch?.status, lockStats]);
@@ -157,28 +201,51 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
   const handleTimeUpdate = (minute: number, seconds: number) => {
     setCurrentMinute(minute);
     setCurrentSeconds(seconds);
-    
+
     // Update stats minute
     updateStat({
-      statType: 'minute',
-      team: 'home', // Not used for minute
+      statType: "minute",
+      team: "home", // Not used for minute
       value: minute,
-      increment: false
+      increment: false,
     });
 
-    // Auto-complete match at 90+ minutes (can be overridden by management)
-    if (minute >= 95 && currentMatch && currentMatch.status === 'live') {
+    // Auto-complete match at 72 minutes as per business requirements
+    if (minute >= 72 && currentMatch && currentMatch.status === "live") {
       Alert.alert(
-        "Match Time",
-        "Match has reached 95+ minutes. Complete the match?",
+        "Match Time Limit Reached",
+        "The match has reached 72 minutes and will be automatically completed. No further updates will be allowed.",
         [
-          { text: "Continue", style: "cancel" },
-          { 
-            text: "Complete Match", 
-            onPress: () => completeMatch(),
-            style: "destructive" 
-          }
-        ]
+          {
+            text: "Complete Match",
+            onPress: async () => {
+              try {
+                await completeMatch();
+                Alert.alert(
+                  "Match Completed",
+                  "The match has been completed successfully. Live updates are now disabled."
+                );
+              } catch (error) {
+                console.error("Error completing match:", error);
+                Alert.alert(
+                  "Error",
+                  "Failed to complete the match. Please try again."
+                );
+              }
+            },
+            style: "default",
+          },
+        ],
+        { cancelable: false } // User must acknowledge
+      );
+    }
+
+    // Show warning when approaching the 72-minute limit
+    if (minute === 70 && currentMatch?.status === "live") {
+      Alert.alert(
+        "Time Warning",
+        "Match will automatically complete in 2 minutes. Please finish any pending updates.",
+        [{ text: "OK", style: "default" }]
       );
     }
   };
@@ -195,154 +262,324 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
     try {
       await updateMatchStatus(currentMatch.id, "completed", currentMinute);
       lockStats();
-      Alert.alert("Success", "Match completed successfully!");
+
+      // Close any open modals
+      setShowPlayerModal(false);
+      setShowSubstitutionModal(false);
+
+      // Show completion message and force navigation back
+      Alert.alert(
+        "Match Completed",
+        "Match completed successfully! No further updates are allowed.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Reset all states and navigate back
+              setShowPlayerModal(false);
+              setShowSubstitutionModal(false);
+              setEventType("");
+              setSelectedTeam("");
+              // Navigate back to previous screen
+              navigation?.navigate("LiveMatch");
+            },
+          },
+        ],
+        { cancelable: false }
+      );
     } catch (error) {
       console.error("Error completing match:", error);
-      Alert.alert("Error", "Failed to complete match");
+      Alert.alert("Error", "Failed to complete match. Please try again.", [
+        { text: "OK" },
+      ]);
     }
   };
 
   // Handle player selection for events
   const handleSelectPlayerForEvent = (type: string, teamId: string) => {
-  if (user?.role !== "management") {
-    Alert.alert("Access Denied", "Only management can update match events");
-    return;
-  }
+    if (user?.role !== "management") {
+      Alert.alert("Access Denied", "Only management can update match events");
+      return;
+    }
 
-  // Optional: Check if match is still live
-  if (currentMatch?.status !== 'live') {
-    Alert.alert("Match Ended", "You can't update events after the match ends.");
-    return;
-  }
+    // Optional: Check if match is still live
+    if (currentMatch?.status !== "live") {
+      Alert.alert(
+        "Match Ended",
+        "You can't update events after the match ends."
+      );
+      return;
+    }
 
-  setEventType(type);
-  setSelectedTeam(teamId);
-  setShowPlayerModal(true);
-};
-  
+    setEventType(type);
+    setSelectedTeam(teamId);
+    setShowPlayerModal(true);
+  };
+
   // Handle substitution
   const handleSubstitution = (teamId: string) => {
     if (user?.role !== "management") {
       Alert.alert("Access Denied", "Only management can update match events");
       return;
     }
-    
+
+    // Check if match is still within 72-minute window
+    if (currentMinute >= 72) {
+      Alert.alert(
+        "Match Time Exceeded",
+        "Cannot make substitutions after 72 minutes. The match is now completed.",
+        [{ text: "OK", style: "default" }]
+      );
+      return;
+    }
+
     setSelectedTeam(teamId);
     setShowSubstitutionModal(true);
   };
-  
-  // Process player event (goal, card)
-  const handlePlayerEvent = async (player: any) => {
-    if (!currentMatch || !eventType || !selectedTeam) {
-      setShowPlayerModal(false);
-      return;
-    }
-    
+
+  // Handle successful event completion and navigation
+  const handleEventCompletion = async (eventType: "match" | "substitution") => {
     try {
-      const newEvent = {
-        id: `event${Date.now()}`,
-        type: eventType as "goal" | "yellow_card" | "red_card" | "substitution" | "assist",
-        playerId: player.id,
-        playerName: player.name,
-        minute: currentMinute,
-        description: `${player.name} - ${eventType.replace("_", " ")}`,
-      };
-      
-      // Update local state
-      setMatchEvents((prev) => [...prev, newEvent]);
-      
-      // Update scores and statistics
-      if (eventType === "goal") {
-        if (selectedTeam === currentMatch.homeTeamId) {
-          const newHomeScore = homeScore + 1;
-          setHomeScore(newHomeScore);
-          updateStat({
-            statType: 'homeScore',
-            team: 'home',
-            value: newHomeScore,
-            increment: false
-          });
-        } else {
-          const newAwayScore = awayScore + 1;
-          setAwayScore(newAwayScore);
-          updateStat({
-            statType: 'awayScore',
-            team: 'away',
-            value: newAwayScore,
-            increment: false
-          });
-        }
+      // Update match status before completion
+      if (currentMatch && updateMatchStatus) {
+        await updateMatchStatus(currentMatch.id, "live", currentMinute);
       }
 
-      // Update card statistics
-      if (eventType === "yellow_card") {
-        updateStat({
-          statType: 'yellowCards',
-          team: selectedTeam === currentMatch.homeTeamId ? 'home' : 'away',
-          value: 1,
-          increment: true
-        });
-      }
-
-      if (eventType === "red_card") {
-        updateStat({
-          statType: 'redCards',
-          team: selectedTeam === currentMatch.homeTeamId ? 'home' : 'away',
-          value: 1,
-          increment: true
-        });
-      }
-      
-      // Update match in backend
-      if (eventType === "goal") {
-        let updatedHomeScore = homeScore;
-        let updatedAwayScore = awayScore;
-        
-        if (selectedTeam === currentMatch.homeTeamId) {
-          updatedHomeScore += 1;
-        } else {
-          updatedAwayScore += 1;
-        }
-        
-        await updateMatch(
-          currentMatch.id,
-          updatedHomeScore,
-          updatedAwayScore,
-          [...matchEvents, newEvent]
-        );
-      } else {
-        await updateMatchStatus(
-          currentMatch.id,
-          "live",
-          currentMinute,
-          newEvent
-        );
-      }
-
-      // Update statistics in backend
-      if (updateMatchStats) {
-        await updateMatchStats(currentMatch.id, stats);
-      }
-      
-      setShowPlayerModal(false);
-      setEventType("");
-      setSelectedTeam("");
-      
-      Alert.alert("Success", "Match event added successfully!");
+      // Show completion message and handle navigation
+      const message =
+        eventType === "substitution"
+          ? "Substitution added successfully!"
+          : "Match event added successfully!";
+      Alert.alert("Success", message, [
+        {
+          text: "OK",
+          onPress: () => {
+            // Reset state and navigate back
+            setShowPlayerModal(false);
+            setShowSubstitutionModal(false);
+            setEventType("");
+            setSelectedTeam("");
+            navigation?.navigate("LiveMatch");
+          },
+        },
+      ]);
     } catch (error) {
-      console.error("Error adding match event:", error);
-      Alert.alert("Error", "Failed to add match event");
+      console.error("Error completing event:", error);
+      Alert.alert("Error", "Failed to complete the action");
     }
   };
 
+  // Track navigation state
+  const [shouldNavigate, setShouldNavigate] = useState(false);
+  const [eventMessage, setEventMessage] = useState("");
+
+  // Handle navigation effect
+  useEffect(() => {
+    if (shouldNavigate) {
+      // Reset navigation state
+      setShouldNavigate(false);
+
+      // Show success message and navigate
+      Alert.alert(
+        "Success",
+        eventMessage,
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Ensure we're on the main thread for navigation
+              requestAnimationFrame(() => {
+                if (navigation?.canGoBack()) {
+                  navigation.goBack();
+                }
+              });
+            },
+          },
+        ],
+        { cancelable: false }
+      );
+    }
+  }, [shouldNavigate, eventMessage, navigation]);
+
+  // Add a useEffect to auto-close modals if match exceeds 72 minutes
+  useEffect(() => {
+    if (currentMinute >= 72) {
+      setShowPlayerModal(false);
+      setShowSubstitutionModal(false);
+    }
+  }, [currentMinute]);
+
+  // Process player event (goal, card)
+  // Process player event (goal, card)
+  const handlePlayerEvent = async (player: any) => {
+    if (!currentMatch || !eventType || !selectedTeam) {
+        setShowPlayerModal(false);
+        return;
+    }
+
+    // Check if match is still within 72-minute window
+    if (currentMinute >= 72) {
+        Alert.alert(
+            "Match Time Exceeded",
+            "Cannot add events after 72 minutes. The match is now completed.",
+            [{ text: "OK", style: "default" }]
+        );
+        setShowPlayerModal(false);
+        return;
+    }
+
+    try {
+        // Close modal first
+        setShowPlayerModal(false);
+        setEventType("");
+        setSelectedTeam("");
+
+        // Determine which team this event belongs to
+        const isHomeTeam =
+            selectedTeam === currentMatch.homeTeamId ||
+            String(selectedTeam) === String(currentMatch.homeTeamId);
+
+        const isAwayTeam =
+            selectedTeam === currentMatch.awayTeamId ||
+            String(selectedTeam) === String(currentMatch.awayTeamId);
+
+        // Get the correct team name for the event
+        let eventTeamName = "";
+        if (isHomeTeam) {
+            eventTeamName = homeTeam?.name || "Home Team";
+        } else if (isAwayTeam) {
+            eventTeamName = awayTeam?.name || "Away Team";
+        } else {
+            console.error("Team not recognized");
+            return;
+        }
+
+        const newEvent = {
+            id: `event${Date.now()}`,
+            type: eventType as
+                | "goal"
+                | "yellow_card"
+                | "red_card"
+                | "substitution"
+                | "assist",
+            playerId: player.id,
+            playerName: player.name,
+            minute: currentMinute,
+            team: selectedTeam, // Store team ID
+            teamName: eventTeamName, // Store team name for display
+            description: `${player.name} - ${eventType.replace("_", " ")}`,
+        };
+
+        // Update local state
+        setMatchEvents((prev) => [...prev, newEvent]);
+
+        // Handle goal scoring
+        if (eventType === "goal") {
+            try {
+                let updatedHomeScore = homeScore;
+                let updatedAwayScore = awayScore;
+
+                if (isHomeTeam) {
+                    updatedHomeScore += 1;
+                } else if (isAwayTeam) {
+                    updatedAwayScore += 1;
+                }
+
+                // Update backend first
+                await updateMatch(
+                    currentMatch.id,
+                    updatedHomeScore,
+                    updatedAwayScore,
+                    [...matchEvents, newEvent]
+                );
+
+                // Update local state
+                setHomeScore(updatedHomeScore);
+                setAwayScore(updatedAwayScore);
+
+                // Update match status and stats
+                await Promise.all([
+                    updateMatchStatus(currentMatch.id, "live", currentMinute),
+                    updateStat({
+                        statType: isHomeTeam ? "homeScore" : "awayScore",
+                        team: isHomeTeam ? "home" : "away",
+                        value: 1,
+                        increment: true,
+                    }),
+                ]);
+            } catch (error) {
+                console.error("Error updating score:", error);
+                Alert.alert("Error", "Failed to update score. Please try again.");
+                setHomeScore(homeScore);
+                setAwayScore(awayScore);
+                setMatchEvents((prev) => prev.slice(0, -1));
+            }
+        }
+
+        // Update card statistics
+        if (eventType === "yellow_card") {
+            updateStat({
+                statType: "yellowCards",
+                team: isHomeTeam ? "home" : "away",
+                value: 1,
+                increment: true,
+            });
+        }
+
+        if (eventType === "red_card") {
+            updateStat({
+                statType: "redCards",
+                team: isHomeTeam ? "home" : "away",
+                value: 1,
+                increment: true,
+            });
+        }
+
+        // Update match status for non-goal events
+        if (eventType !== "goal") {
+            await updateMatchStatus(
+                currentMatch.id,
+                "live",
+                currentMinute,
+                newEvent
+            );
+        }
+
+        // Update statistics in backend
+        if (updateMatchStats) {
+            await updateMatchStats(currentMatch.id, stats);
+        }
+
+        await handleEventCompletion("match");
+    } catch (error) {
+        console.error("Error adding match event:", error);
+        Alert.alert("Error", "Failed to add match event");
+    }
+};
+
+  // Process substitution
   // Process substitution
   const handleProcessSubstitution = async (outPlayer: any, inPlayer: any) => {
     if (!currentMatch || !selectedTeam) {
       setShowSubstitutionModal(false);
       return;
     }
-    
+
     try {
+      // Normalize IDs to string for comparison to avoid type mismatch
+      const selectedTeamId = String(selectedTeam);
+      const homeTeamId = String(currentMatch.homeTeamId);
+      const awayTeamId = String(currentMatch.awayTeamId);
+
+      // Determine which team this substitution belongs to
+      const isHomeTeam = selectedTeamId === homeTeamId;
+
+      // Get the correct team name for the event
+      const eventTeamName = isHomeTeam
+        ? homeTeam?.name || homeTeamInfo.name || "Home Team"
+        : awayTeam?.name || awayTeamInfo.name || "Away Team";
+
+      // Create new substitution event
       const newEvent = {
         id: `event${Date.now()}`,
         type: "substitution" as const,
@@ -351,37 +588,52 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
         playerName: `${outPlayer.name} → ${inPlayer.name}`,
         minute: currentMinute,
         description: `${outPlayer.name} is replaced by ${inPlayer.name}`,
-        team: selectedTeam,
+        team: selectedTeamId,
+        teamName: eventTeamName,
       };
-      
+
+      // Debug logs for verification
+      console.log("Selected team ID:", selectedTeamId);
+      console.log("Home team ID:", homeTeamId);
+      console.log("Away team ID:", awayTeamId);
+      console.log("Is home team?", isHomeTeam);
+      console.log("New Event:", newEvent);
+
       // Update local state
       setMatchEvents((prev) => [...prev, newEvent]);
 
       // Update substitution statistics
       updateStat({
-        statType: 'substitutions',
-        team: selectedTeam === currentMatch.homeTeamId ? 'home' : 'away',
+        statType: "substitutions",
+        team: isHomeTeam ? "home" : "away",
         value: 1,
-        increment: true
+        increment: true,
       });
-      
-      // Update match in backend
-      await updateMatchStatus(
-        currentMatch.id,
-        "live",
-        currentMinute,
-        newEvent
-      );
 
-      // Update statistics in backend
+      // Update match in backend
+      await updateMatchStatus(currentMatch.id, "live", currentMinute, newEvent);
+
+      // Update statistics in backend if applicable
       if (updateMatchStats) {
         await updateMatchStats(currentMatch.id, stats);
       }
-      
-      setShowSubstitutionModal(false);
-      setSelectedTeam("");
-      
-      Alert.alert("Success", "Substitution added successfully!");
+
+      // Success message and navigation
+      Alert.alert(
+        "Success",
+        "Substitution added successfully!",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              setShowSubstitutionModal(false);
+              setSelectedTeam("");
+              navigation?.navigate("LiveMatch");
+            },
+          },
+        ],
+        { cancelable: false }
+      );
     } catch (error) {
       console.error("Error processing substitution:", error);
       Alert.alert("Error", "Failed to process substitution");
@@ -391,15 +643,15 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
   // Handle statistics updates
   const handleStatsUpdate = (update: any) => {
     const success = updateStat(update);
-    
+
     if (success && currentMatch && updateMatchStats) {
       // Update backend asynchronously without blocking the UI
-      updateMatchStats(currentMatch.id, stats).catch(error => {
+      updateMatchStats(currentMatch.id, stats).catch((error) => {
         console.error("Error updating match statistics:", error);
         Alert.alert("Error", "Failed to update statistics in backend");
       });
     }
-    
+
     return success;
   };
 
@@ -420,12 +672,11 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
 
   // Get team info
   const getTeamInfo = (teamId: string) => {
-    const team = teams?.find((t) => 
-      t.id === teamId || 
-      t._id === teamId || 
-      String(t.id) === String(teamId)
+    const team = teams?.find(
+      (t) =>
+        t.id === teamId || t._id === teamId || String(t.id) === String(teamId)
     );
-    
+
     return {
       name: team?.name || "Unknown Team",
       logo: team?.logo || null,
@@ -455,7 +706,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
   // No live matches
   if (!currentMatch) {
     return (
-      <ScrollView 
+      <ScrollView
         style={styles.container}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -478,14 +729,20 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
         <View style={styles.noMatchContainer}>
           <Ionicons name="football-outline" size={80} color={COLORS.gray} />
           <Text style={styles.noMatchText}>No Live Matches</Text>
-          <Text style={styles.noMatchSubtext}>Check back when matches are in progress</Text>
-          
+          <Text style={styles.noMatchSubtext}>
+            Check back when matches are in progress
+          </Text>
+
           {user?.role === "management" && (
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.scheduleButton}
               onPress={() => navigation?.navigate("ScheduleMatch")}
             >
-              <Ionicons name="calendar-outline" size={20} color={COLORS.white} />
+              <Ionicons
+                name="calendar-outline"
+                size={20}
+                color={COLORS.white}
+              />
               <Text style={styles.scheduleButtonText}>Schedule Match</Text>
             </TouchableOpacity>
           )}
@@ -493,20 +750,24 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
       </ScrollView>
     );
   }
-  
+
   // Get team info
-  const homeTeamInfo = homeTeam ? {
-    name: homeTeam.name,
-    logo: homeTeam.logo
-  } : getTeamInfo(currentMatch.homeTeamId);
-  
-  const awayTeamInfo = awayTeam ? {
-    name: awayTeam.name,
-    logo: awayTeam.logo
-  } : getTeamInfo(currentMatch.awayTeamId);
+  const homeTeamInfo = homeTeam
+    ? {
+        name: homeTeam.name,
+        logo: homeTeam.logo,
+      }
+    : getTeamInfo(currentMatch.homeTeamId);
+
+  const awayTeamInfo = awayTeam
+    ? {
+        name: awayTeam.name,
+        logo: awayTeam.logo,
+      }
+    : getTeamInfo(currentMatch.awayTeamId);
 
   return (
-    <ScrollView 
+    <ScrollView
       style={styles.container}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -526,20 +787,22 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
           })}
         </Text>
       </View>
-      
+
       {/* Match selector for multiple live matches */}
       {liveMatches.length > 1 && (
         <View style={styles.matchSelector}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.selectorButton}
             onPress={() => setShowMatchSelector(!showMatchSelector)}
           >
             <Text style={styles.selectorButtonText}>
-              {currentMatch ? `${homeTeamInfo.name} vs ${awayTeamInfo.name}` : "Select Match"}
+              {currentMatch
+                ? `${homeTeamInfo.name} vs ${awayTeamInfo.name}`
+                : "Select Match"}
             </Text>
             <Ionicons name="chevron-down" size={16} color={COLORS.white} />
           </TouchableOpacity>
-          
+
           {showMatchSelector && (
             <View style={styles.matchesList}>
               {liveMatches.map((match) => {
@@ -550,7 +813,8 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
                     key={match.id}
                     style={[
                       styles.matchOption,
-                      currentMatch?.id === match.id && styles.selectedMatchOption,
+                      currentMatch?.id === match.id &&
+                        styles.selectedMatchOption,
                     ]}
                     onPress={() => {
                       setSelectedMatchId(match.id);
@@ -582,10 +846,15 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
       <View style={styles.scoreSection}>
         <View style={styles.teamSection}>
           {homeTeamInfo.logo ? (
-            <Image source={{ uri: homeTeamInfo.logo }} style={styles.teamLogo} />
+            <Image
+              source={{ uri: homeTeamInfo.logo }}
+              style={styles.teamLogo}
+            />
           ) : (
             <View style={styles.teamLogoPlaceholder}>
-              <Text style={styles.teamLogoText}>{homeTeamInfo.name.charAt(0)}</Text>
+              <Text style={styles.teamLogoText}>
+                {homeTeamInfo.name.charAt(0)}
+              </Text>
             </View>
           )}
           <Text style={styles.teamName}>{homeTeamInfo.name}</Text>
@@ -600,10 +869,15 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
 
         <View style={styles.teamSection}>
           {awayTeamInfo.logo ? (
-            <Image source={{ uri: awayTeamInfo.logo }} style={styles.teamLogo} />
+            <Image
+              source={{ uri: awayTeamInfo.logo }}
+              style={styles.teamLogo}
+            />
           ) : (
             <View style={styles.teamLogoPlaceholder}>
-              <Text style={styles.teamLogoText}>{awayTeamInfo.name.charAt(0)}</Text>
+              <Text style={styles.teamLogoText}>
+                {awayTeamInfo.name.charAt(0)}
+              </Text>
             </View>
           )}
           <Text style={styles.teamName}>{awayTeamInfo.name}</Text>
@@ -613,9 +887,11 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
 
       {/* Match info */}
       <View style={styles.matchInfo}>
-        <Text style={styles.venue}>📍 {currentMatch.venue || "Football Arena"}</Text>
+        <Text style={styles.venue}>
+          📍 {currentMatch.venue || "Football Arena"}
+        </Text>
         <Text style={styles.date}>
-          {currentMatch.date || "2025-06-09"} • {currentMatch.time || "09:21"}
+          {currentMatch.date || "2025-06-11"} • {currentMatch.time || "10:52"}
         </Text>
         {lastUpdate && (
           <Text style={styles.lastUpdate}>
@@ -627,21 +903,45 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
       {/* View Toggle Buttons */}
       <View style={styles.viewToggle}>
         <TouchableOpacity
-          style={[styles.toggleButton, !showStatsView && styles.activeToggleButton]}
+          style={[
+            styles.toggleButton,
+            !showStatsView && styles.activeToggleButton,
+          ]}
           onPress={() => setShowStatsView(false)}
         >
-          <Ionicons name="list-outline" size={20} color={!showStatsView ? COLORS.black : COLORS.white} />
-          <Text style={[styles.toggleButtonText, !showStatsView && styles.activeToggleButtonText]}>
+          <Ionicons
+            name="list-outline"
+            size={20}
+            color={!showStatsView ? COLORS.black : COLORS.white}
+          />
+          <Text
+            style={[
+              styles.toggleButtonText,
+              !showStatsView && styles.activeToggleButtonText,
+            ]}
+          >
             Events
           </Text>
         </TouchableOpacity>
-        
+
         <TouchableOpacity
-          style={[styles.toggleButton, showStatsView && styles.activeToggleButton]}
+          style={[
+            styles.toggleButton,
+            showStatsView && styles.activeToggleButton,
+          ]}
           onPress={() => setShowStatsView(true)}
         >
-          <Ionicons name="stats-chart-outline" size={20} color={showStatsView ? COLORS.black : COLORS.white} />
-          <Text style={[styles.toggleButtonText, showStatsView && styles.activeToggleButtonText]}>
+          <Ionicons
+            name="stats-chart-outline"
+            size={20}
+            color={showStatsView ? COLORS.black : COLORS.white}
+          />
+          <Text
+            style={[
+              styles.toggleButtonText,
+              showStatsView && styles.activeToggleButtonText,
+            ]}
+          >
             Statistics
           </Text>
         </TouchableOpacity>
@@ -657,17 +957,48 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
         />
       ) : (
         <View>
-          {/* Management controls */}
-          {user?.role === "management" && (
+          {/* Management controls with time remaining indicator */}
+          {user?.role === "management" && currentMatch?.status === "live" && (
             <View style={styles.managementControls}>
-              <Text style={styles.controlsTitle}>Match Controls</Text>
+              <View style={styles.controlsHeader}>
+                <Text style={styles.controlsTitle}>Match Controls</Text>
+                <View style={styles.timeRemainingContainer}>
+                  <Text style={styles.timeRemainingLabel}>Time Remaining:</Text>
+                  <Text
+                    style={[
+                      styles.timeRemainingValue,
+                      currentMinute >= 70 && styles.timeRemainingWarning,
+                    ]}
+                  >
+                    {Math.max(0, 72 - currentMinute)}m {60 - currentSeconds}s
+                  </Text>
+                </View>
+              </View>
+
+              {/* Progress bar */}
+              <View style={styles.progressBarContainer}>
+                <View
+                  style={[
+                    styles.progressBar,
+                    { width: `${Math.min(100, (currentMinute / 72) * 100)}%` },
+                    currentMinute >= 70 && styles.progressBarWarning,
+                  ]}
+                />
+                <Text style={styles.progressText}>
+                  {currentMinute >= 72
+                    ? "Match Completed"
+                    : `${Math.floor((currentMinute / 72) * 100)}% Complete`}
+                </Text>
+              </View>
 
               {/* Event buttons section */}
               <Text style={styles.controlSubtitle}>Home Team Events</Text>
               <View style={styles.eventButtons}>
                 <TouchableOpacity
                   style={[styles.eventButton, styles.goalButton]}
-                  onPress={() => handleSelectPlayerForEvent("goal", currentMatch.homeTeamId)}
+                  onPress={() =>
+                    handleSelectPlayerForEvent("goal", currentMatch.homeTeamId)
+                  }
                 >
                   <Ionicons name="football" size={20} color={COLORS.white} />
                   <Text style={styles.eventButtonText}>Goal</Text>
@@ -675,7 +1006,12 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
 
                 <TouchableOpacity
                   style={[styles.eventButton, styles.cardButton]}
-                  onPress={() => handleSelectPlayerForEvent("yellow_card", currentMatch.homeTeamId)}
+                  onPress={() =>
+                    handleSelectPlayerForEvent(
+                      "yellow_card",
+                      currentMatch.homeTeamId
+                    )
+                  }
                 >
                   <View style={styles.yellowCard} />
                   <Text style={styles.eventButtonText}>Yellow</Text>
@@ -683,26 +1019,37 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
 
                 <TouchableOpacity
                   style={[styles.eventButton, styles.redCardButton]}
-                  onPress={() => handleSelectPlayerForEvent("red_card", currentMatch.homeTeamId)}
+                  onPress={() =>
+                    handleSelectPlayerForEvent(
+                      "red_card",
+                      currentMatch.homeTeamId
+                    )
+                  }
                 >
                   <View style={styles.redCard} />
                   <Text style={styles.eventButtonText}>Red</Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                   style={[styles.eventButton, styles.subButton]}
                   onPress={() => handleSubstitution(currentMatch.homeTeamId)}
                 >
-                  <Ionicons name="swap-horizontal" size={20} color={COLORS.white} />
+                  <Ionicons
+                    name="swap-horizontal"
+                    size={20}
+                    color={COLORS.white}
+                  />
                   <Text style={styles.eventButtonText}>Sub</Text>
                 </TouchableOpacity>
               </View>
-              
+
               <Text style={styles.controlSubtitle}>Away Team Events</Text>
               <View style={styles.eventButtons}>
                 <TouchableOpacity
                   style={[styles.eventButton, styles.goalButton]}
-                  onPress={() => handleSelectPlayerForEvent("goal", currentMatch.awayTeamId)}
+                  onPress={() =>
+                    handleSelectPlayerForEvent("goal", currentMatch.awayTeamId)
+                  }
                 >
                   <Ionicons name="football" size={20} color={COLORS.white} />
                   <Text style={styles.eventButtonText}>Goal</Text>
@@ -710,7 +1057,12 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
 
                 <TouchableOpacity
                   style={[styles.eventButton, styles.cardButton]}
-                  onPress={() => handleSelectPlayerForEvent("yellow_card", currentMatch.awayTeamId)}
+                  onPress={() =>
+                    handleSelectPlayerForEvent(
+                      "yellow_card",
+                      currentMatch.awayTeamId
+                    )
+                  }
                 >
                   <View style={styles.yellowCard} />
                   <Text style={styles.eventButtonText}>Yellow</Text>
@@ -718,29 +1070,44 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
 
                 <TouchableOpacity
                   style={[styles.eventButton, styles.redCardButton]}
-                  onPress={() => handleSelectPlayerForEvent("red_card", currentMatch.awayTeamId)}
+                  onPress={() =>
+                    handleSelectPlayerForEvent(
+                      "red_card",
+                      currentMatch.awayTeamId
+                    )
+                  }
                 >
                   <View style={styles.redCard} />
                   <Text style={styles.eventButtonText}>Red</Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                   style={[styles.eventButton, styles.subButton]}
                   onPress={() => handleSubstitution(currentMatch.awayTeamId)}
                 >
-                  <Ionicons name="swap-horizontal" size={20} color={COLORS.white} />
+                  <Ionicons
+                    name="swap-horizontal"
+                    size={20}
+                    color={COLORS.white}
+                  />
                   <Text style={styles.eventButtonText}>Sub</Text>
                 </TouchableOpacity>
               </View>
 
               {/* Match completion button */}
-              {currentMatch.status === 'live' && (
-                <TouchableOpacity 
-                  style={styles.completeMatchButton} 
+              {currentMatch.status === "live" && (
+                <TouchableOpacity
+                  style={styles.completeMatchButton}
                   onPress={completeMatch}
                 >
-                  <Ionicons name="checkmark-circle" size={20} color={COLORS.white} />
-                  <Text style={styles.completeMatchButtonText}>Complete Match</Text>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={20}
+                    color={COLORS.white}
+                  />
+                  <Text style={styles.completeMatchButtonText}>
+                    Complete Match
+                  </Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -751,10 +1118,12 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
             <View style={styles.eventsSectionHeader}>
               <Text style={styles.eventsTitle}>Match Events</Text>
               <View style={styles.eventCount}>
-                <Text style={styles.eventCountText}>{matchEvents ? matchEvents.length : 0}</Text>
+                <Text style={styles.eventCountText}>
+                  {matchEvents ? matchEvents.length : 0}
+                </Text>
               </View>
             </View>
-            
+
             {!matchEvents || matchEvents.length === 0 ? (
               <Text style={styles.noEventsText}>No events yet</Text>
             ) : (
@@ -764,14 +1133,38 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
                     <Text style={styles.eventMinute}>{event.minute}'</Text>
                   </View>
                   <View style={styles.eventIcon}>
-                    {event.type === "goal" && <Ionicons name="football" size={16} color={COLORS.green} />}
-                    {event.type === "yellow_card" && <View style={styles.smallYellowCard} />}
-                    {event.type === "red_card" && <View style={styles.smallRedCard} />}
-                    {event.type === "substitution" && <Ionicons name="swap-horizontal" size={16} color={COLORS.blue} />}
+                    {event.type === "goal" && (
+                      <Ionicons
+                        name="football"
+                        size={16}
+                        color={COLORS.green}
+                      />
+                    )}
+                    {event.type === "yellow_card" && (
+                      <View style={styles.smallYellowCard} />
+                    )}
+                    {event.type === "red_card" && (
+                      <View style={styles.smallRedCard} />
+                    )}
+                    {event.type === "substitution" && (
+                      <Ionicons
+                        name="swap-horizontal"
+                        size={16}
+                        color={COLORS.blue}
+                      />
+                    )}
                   </View>
                   <View style={styles.eventDetails}>
                     <Text style={styles.eventPlayer}>{event.playerName}</Text>
-                    <Text style={styles.eventType}>{event.type.replace("_", " ").toUpperCase()}</Text>
+                    <Text style={styles.eventType}>
+                      {event.type.replace("_", " ").toUpperCase()}
+                    </Text>
+                    <Text style={styles.eventTeam}>
+                      {event.teamName ||
+                        (event.team === currentMatch.homeTeamId
+                          ? homeTeamInfo.name
+                          : awayTeamInfo.name)}
+                    </Text>
                   </View>
                 </View>
               ))
@@ -779,7 +1172,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
           </View>
         </View>
       )}
-      
+
       {/* Player Selection Modal */}
       <Modal
         visible={showPlayerModal}
@@ -790,12 +1183,20 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>
-              Select Player for {eventType === "goal" ? "Goal" : 
-                eventType === "yellow_card" ? "Yellow Card" : "Red Card"}
+              Select Player for{" "}
+              {eventType === "goal"
+                ? "Goal"
+                : eventType === "yellow_card"
+                ? "Yellow Card"
+                : "Red Card"}
             </Text>
-            
+
             <FlatList
-              data={selectedTeam === currentMatch?.homeTeamId ? homeTeamPlayers : awayTeamPlayers}
+              data={
+                selectedTeam === currentMatch?.homeTeamId
+                  ? homeTeamPlayers
+                  : awayTeamPlayers
+              }
               renderItem={renderPlayerItem}
               keyExtractor={(item) => item.id}
               style={styles.playerList}
@@ -803,7 +1204,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
                 <Text style={styles.noPlayersText}>No players available</Text>
               }
             />
-            
+
             <TouchableOpacity
               style={styles.cancelModalButton}
               onPress={() => setShowPlayerModal(false)}
@@ -813,7 +1214,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
           </View>
         </View>
       </Modal>
-      
+
       {/* Substitution Modal */}
       <Modal
         visible={showSubstitutionModal}
@@ -824,38 +1225,49 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Player to Substitute</Text>
-            
+
             <View style={styles.subSection}>
               <Text style={styles.subSectionTitle}>Players On Field</Text>
               <FlatList
-                data={(selectedTeam === currentMatch?.homeTeamId ? homeTeamPlayers : awayTeamPlayers)
-                  .filter(p => !p.isSubstitute)}
+                data={(selectedTeam === currentMatch?.homeTeamId
+                  ? homeTeamPlayers
+                  : awayTeamPlayers
+                ).filter((p) => !p.isSubstitute)}
                 renderItem={({ item }) => (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.playerItem}
                     onPress={() => {
                       const outPlayer = item;
-                      const substitutes = (selectedTeam === currentMatch?.homeTeamId ? homeTeamPlayers : awayTeamPlayers)
-                        .filter(p => p.isSubstitute);
-                      
+                      const substitutes = (
+                        selectedTeam === currentMatch?.homeTeamId
+                          ? homeTeamPlayers
+                          : awayTeamPlayers
+                      ).filter((p) => p.isSubstitute);
+
                       Alert.alert(
                         "Select Substitute",
                         `Select player to replace ${outPlayer.name}`,
                         [
-                          ...substitutes.map(sub => ({
+                          ...substitutes.map((sub) => ({
                             text: `${sub.jerseyNumber} - ${sub.name}`,
-                            onPress: () => handleProcessSubstitution(outPlayer, sub)
+                            onPress: () =>
+                              handleProcessSubstitution(outPlayer, sub),
                           })),
-                          { text: "Cancel", style: "cancel" }
+                          { text: "Cancel", style: "cancel" },
                         ]
                       );
                     }}
                   >
                     <View style={styles.playerAvatar}>
                       {item.photo ? (
-                        <Image source={{ uri: item.photo }} style={styles.playerPhoto} />
+                        <Image
+                          source={{ uri: item.photo }}
+                          style={styles.playerPhoto}
+                        />
                       ) : (
-                        <Text style={styles.playerNumber}>{item.jerseyNumber}</Text>
+                        <Text style={styles.playerNumber}>
+                          {item.jerseyNumber}
+                        </Text>
                       )}
                     </View>
                     <View style={styles.playerDetails}>
@@ -871,7 +1283,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({ navigation })
                 }
               />
             </View>
-            
+
             <TouchableOpacity
               style={styles.cancelModalButton}
               onPress={() => setShowSubstitutionModal(false)}
@@ -1053,7 +1465,7 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     fontSize: 11,
     marginTop: 5,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
   viewToggle: {
     flexDirection: "row",
@@ -1087,11 +1499,68 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderRadius: 15,
   },
+  controlsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 20,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
   controlsTitle: {
     color: COLORS.primary,
     fontSize: 18,
     fontWeight: "bold",
+  },
+  timeRemainingContainer: {
+    backgroundColor: "rgba(0,0,0,0.3)",
+    padding: 8,
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  timeRemainingLabel: {
+    color: COLORS.gray,
+    fontSize: 12,
+    marginRight: 6,
+  },
+  timeRemainingValue: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  timeRemainingWarning: {
+    color: "#ff4500",
+  },
+  progressBarContainer: {
+    marginTop: 10,
     marginBottom: 20,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 10,
+    height: 20,
+    overflow: "hidden",
+    position: "relative",
+  },
+  progressBar: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    height: "100%",
+    backgroundColor: COLORS.primary,
+    transition: "width 0.3s ease",
+  },
+  progressBarWarning: {
+    backgroundColor: "#ff4500",
+  },
+  progressText: {
+    position: "absolute",
+    width: "100%",
+    textAlign: "center",
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: "bold",
+    lineHeight: 20,
   },
   controlSubtitle: {
     color: COLORS.white,
@@ -1237,6 +1706,12 @@ const styles = StyleSheet.create({
   eventType: {
     color: COLORS.gray,
     fontSize: 12,
+    marginTop: 2,
+  },
+  eventTeam: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: "bold",
     marginTop: 2,
   },
   modalOverlay: {

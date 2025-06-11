@@ -10,6 +10,9 @@ const __DEV__ = process.env.NODE_ENV !== "production"
  * @param user The current user object
  * @param teams Array of teams from the tournament
  */
+
+
+
 export const debugTeamAssignment = (user: any, teams: any[]) => {
   if (__DEV__) {
     console.log("DEBUG: Current user:", user)
