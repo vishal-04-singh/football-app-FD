@@ -142,24 +142,27 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       // Create match date object in LOCAL time (not UTC) to match your picker
       const matchDateTime = new Date(year, month - 1, day, hours, minutes);
 
-      // Calculate match end time (match time + 72 minutes = 1.2 hours)
-      const matchEndTime = new Date(matchDateTime.getTime() + 72 * 60 * 1000);
+      // Calculate match end time (match time + 72 minutes)
+      // A match is live for exactly 72 minutes as per business requirements
+      const MATCH_DURATION_MS = 72 * 60 * 1000; // 72 minutes in milliseconds
+      const matchEndTime = new Date(matchDateTime.getTime() + MATCH_DURATION_MS);
 
       // Get current time in local time zone
       const currentLocalTime = new Date();
 
-      // Determine status
-      if (
-        currentLocalTime >= matchDateTime &&
-        currentLocalTime < matchEndTime
-      ) {
-        // Match is LIVE
+      // Calculate time elapsed since match start (in minutes)
+      const elapsedMs = currentLocalTime.getTime() - matchDateTime.getTime();
+      const elapsedMinutes = Math.floor(elapsedMs / (1000 * 60));
+
+      // Determine status with more precise timing
+      if (currentLocalTime >= matchDateTime && elapsedMinutes < 72) {
+        // Match is LIVE - only during the 72-minute window
         return MATCH_STATUS.LIVE;
-      } else if (currentLocalTime >= matchEndTime) {
-        // Match is COMPLETED
+      } else if (elapsedMinutes >= 72 || currentLocalTime >= matchEndTime) {
+        // Match is COMPLETED - after 72 minutes or if current time is past end time
         return MATCH_STATUS.COMPLETED;
       } else {
-        // Match is UPCOMING
+        // Match is UPCOMING - if current time is before match start
         return MATCH_STATUS.UPCOMING;
       }
     } catch (error) {
