@@ -557,7 +557,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
     }
 };
 
-  // Process substitution
+ 
   // Process substitution
   const handleProcessSubstitution = async (outPlayer: any, inPlayer: any) => {
     if (!currentMatch || !selectedTeam) {
