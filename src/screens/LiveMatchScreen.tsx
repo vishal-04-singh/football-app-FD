@@ -22,8 +22,8 @@ import { useMatchStats } from "../../hooks/useMatchStats";
 import MatchStatsPanel from "../../components/MatchStatsPanel";
 import LiveMatchTimer from "../../components/LiveMatchTimer";
 
-// Current time from user: 2025-06-11 10:52:15
-const CURRENT_TIME = new Date("2025-06-11T10:52:15Z");
+// Current time from user: 2025-06-12 11:15:39
+const CURRENT_TIME = new Date("2025-06-12T11:15:39Z");
 
 const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
   navigation,
@@ -65,7 +65,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
   const [selectedTeam, setSelectedTeam] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
-  // User info
+  // User info - Updated to use current user
   const [username, setUsername] = useState("vishal-04-singh");
 
   // Get live matches
@@ -103,22 +103,80 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
     }
   }, [liveMatches, selectedMatchId]);
 
-  // Load match data and initialize scores
+  // Load match data and initialize scores - ENHANCED
   useEffect(() => {
     if (currentMatch) {
-      // Calculate scores from events
+      console.log("=== MATCH DATA LOADING ===");
+      console.log("Current Match:", currentMatch);
+      console.log("Home Team ID:", currentMatch.homeTeamId, typeof currentMatch.homeTeamId);
+      console.log("Away Team ID:", currentMatch.awayTeamId, typeof currentMatch.awayTeamId);
+      console.log("Match Events:", currentMatch.events);
+
+      // Calculate scores from events with comprehensive debugging
       let homeGoals = 0;
       let awayGoals = 0;
 
-      (currentMatch.events || []).forEach((event) => {
+      const homeTeamId = String(currentMatch.homeTeamId);
+      const awayTeamId = String(currentMatch.awayTeamId);
+
+      (currentMatch.events || []).forEach((event, index) => {
+        console.log(`Event ${index + 1}:`, {
+          eventType: event.type,
+          eventTeamId: event.team || event.teamId || "undefined",
+          homeTeamId: homeTeamId,
+          awayTeamId: awayTeamId,
+          player: event.playerName
+        });
+
         if (event.type === "goal") {
-          if (event.team === currentMatch.homeTeamId) {
+          // Check multiple possible team ID properties and formats
+          const eventTeamId = String(event.team || event.teamId || "undefined");
+          
+          if (eventTeamId === homeTeamId) {
             homeGoals++;
-          } else {
+            console.log(`✅ Goal counted for HOME team (${homeTeamId})`);
+          } else if (eventTeamId === awayTeamId) {
             awayGoals++;
+            console.log(`✅ Goal counted for AWAY team (${awayTeamId})`);
+          } else {
+            console.warn(`⚠️ Goal event team ID "${eventTeamId}" doesn't match any team!`);
+            console.warn(`Expected: HOME="${homeTeamId}" or AWAY="${awayTeamId}"`);
+            
+            // Enhanced player-based team determination
+            if (event.playerId && teams) {
+              console.log(`🔍 Attempting to determine team from player ID: ${event.playerId}`);
+              
+              const playerTeam = teams.find(team => 
+                team.players?.some(player => 
+                  String(player.id) === String(event.playerId) || 
+                  String(player._id) === String(event.playerId)
+                )
+              );
+              
+              if (playerTeam) {
+                const playerTeamId = String(playerTeam.id || playerTeam._id);
+                console.log(`🔍 Found player's team via lookup: ${playerTeam.name} (${playerTeamId})`);
+                
+                if (playerTeamId === homeTeamId) {
+                  homeGoals++;
+                  console.log(`✅ Goal counted for HOME team via player lookup`);
+                } else if (playerTeamId === awayTeamId) {
+                  awayGoals++;
+                  console.log(`✅ Goal counted for AWAY team via player lookup`);
+                } else {
+                  console.warn(`⚠️ Player's team ID "${playerTeamId}" doesn't match match teams`);
+                }
+              } else {
+                console.warn(`⚠️ Could not find player's team for player ID: ${event.playerId}`);
+              }
+            } else {
+              console.warn(`⚠️ No player ID available for team determination`);
+            }
           }
         }
       });
+
+      console.log(`Final calculated scores - Home: ${homeGoals} Away: ${awayGoals}`);
 
       // Set scores based on events
       setHomeScore(homeGoals);
@@ -154,6 +212,11 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
           String(team.id) === String(currentMatch.awayTeamId)
       );
 
+      console.log("Teams found:", {
+        home: home?.name,
+        away: away?.name
+      });
+
       setHomeTeam(home);
       setAwayTeam(away);
 
@@ -183,7 +246,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
     }
   }, [currentMatch, teams, lockStats, unlockStats]);
 
-  // Get username from current user
+  // Get username from current user - FIXED
   useEffect(() => {
     if (user?.name) {
       setUsername(user.name);
@@ -241,13 +304,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
     }
 
     // Show warning when approaching the 72-minute limit
-    if (minute === 70 && currentMatch?.status === "live") {
-      Alert.alert(
-        "Time Warning",
-        "Match will automatically complete in 2 minutes. Please finish any pending updates.",
-        [{ text: "OK", style: "default" }]
-      );
-    }
+    
   };
 
   // Toggle half-time
@@ -409,8 +466,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
     }
   }, [currentMinute]);
 
-  // Process player event (goal, card)
-  // Process player event (goal, card)
+  // Process player event (goal, card) - ENHANCED
   const handlePlayerEvent = async (player: any) => {
     if (!currentMatch || !eventType || !selectedTeam) {
         setShowPlayerModal(false);
@@ -434,14 +490,29 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
         setEventType("");
         setSelectedTeam("");
 
-        // Determine which team this event belongs to
-        const isHomeTeam =
-            selectedTeam === currentMatch.homeTeamId ||
-            String(selectedTeam) === String(currentMatch.homeTeamId);
+        // Normalize team IDs for comparison
+        const selectedTeamId = String(selectedTeam);
+        const homeTeamId = String(currentMatch.homeTeamId);
+        const awayTeamId = String(currentMatch.awayTeamId);
 
-        const isAwayTeam =
-            selectedTeam === currentMatch.awayTeamId ||
-            String(selectedTeam) === String(currentMatch.awayTeamId);
+        console.log("=== CREATING NEW EVENT ===");
+        console.log("Selected Team ID:", selectedTeamId);
+        console.log("Home Team ID:", homeTeamId);
+        console.log("Away Team ID:", awayTeamId);
+        console.log("Player:", player);
+
+        // Determine which team this event belongs to
+        const isHomeTeam = selectedTeamId === homeTeamId;
+        const isAwayTeam = selectedTeamId === awayTeamId;
+
+        console.log("Is Home Team:", isHomeTeam);
+        console.log("Is Away Team:", isAwayTeam);
+
+        if (!isHomeTeam && !isAwayTeam) {
+            console.error("❌ Team not recognized!");
+            Alert.alert("Error", "Could not determine which team this event belongs to.");
+            return;
+        }
 
         // Get the correct team name for the event
         let eventTeamName = "";
@@ -449,11 +520,9 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
             eventTeamName = homeTeam?.name || "Home Team";
         } else if (isAwayTeam) {
             eventTeamName = awayTeam?.name || "Away Team";
-        } else {
-            console.error("Team not recognized");
-            return;
         }
 
+        // Create new event with all required team identification fields
         const newEvent = {
             id: `event${Date.now()}`,
             type: eventType as
@@ -462,13 +531,23 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
                 | "red_card"
                 | "substitution"
                 | "assist",
-            playerId: player.id,
+            playerId: String(player.id || player._id), // Ensure string
             playerName: player.name,
             minute: currentMinute,
-            team: selectedTeam, // Store team ID
+            team: selectedTeamId, // Store the normalized team ID
+            teamId: selectedTeamId, // Also store as teamId for compatibility
             teamName: eventTeamName, // Store team name for display
             description: `${player.name} - ${eventType.replace("_", " ")}`,
         };
+
+        console.log("New Event Created:", newEvent);
+
+        // Verify the event has proper team identification
+        if (!newEvent.team || !newEvent.teamId) {
+            console.error("❌ Event missing team identification!");
+            Alert.alert("Error", "Failed to create event with proper team identification.");
+            return;
+        }
 
         // Update local state
         setMatchEvents((prev) => [...prev, newEvent]);
@@ -481,8 +560,10 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
 
                 if (isHomeTeam) {
                     updatedHomeScore += 1;
+                    console.log(`⚽ Goal for HOME team! New score: ${updatedHomeScore}`);
                 } else if (isAwayTeam) {
                     updatedAwayScore += 1;
+                    console.log(`⚽ Goal for AWAY team! New score: ${updatedAwayScore}`);
                 }
 
                 // Update backend first
@@ -557,8 +638,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
     }
 };
 
- 
-  // Process substitution
+  // Process substitution - ENHANCED
   const handleProcessSubstitution = async (outPlayer: any, inPlayer: any) => {
     if (!currentMatch || !selectedTeam) {
       setShowSubstitutionModal(false);
@@ -575,24 +655,29 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
       const isHomeTeam = selectedTeamId === homeTeamId;
 
       // Get the correct team name for the event
+      const homeTeamInfo = homeTeam || { name: "Home Team" };
+      const awayTeamInfo = awayTeam || { name: "Away Team" };
+      
       const eventTeamName = isHomeTeam
-        ? homeTeam?.name || homeTeamInfo.name || "Home Team"
-        : awayTeam?.name || awayTeamInfo.name || "Away Team";
+        ? homeTeamInfo.name
+        : awayTeamInfo.name;
 
-      // Create new substitution event
+      // Create new substitution event with all required team identification fields
       const newEvent = {
         id: `event${Date.now()}`,
         type: "substitution" as const,
-        playerId: inPlayer.id,
-        outPlayerId: outPlayer.id,
+        playerId: String(inPlayer.id || inPlayer._id), // Ensure string
+        outPlayerId: String(outPlayer.id || outPlayer._id), // Ensure string
         playerName: `${outPlayer.name} → ${inPlayer.name}`,
         minute: currentMinute,
         description: `${outPlayer.name} is replaced by ${inPlayer.name}`,
-        team: selectedTeamId,
+        team: selectedTeamId, // Store normalized team ID
+        teamId: selectedTeamId, // Also store as teamId for compatibility
         teamName: eventTeamName,
       };
 
       // Debug logs for verification
+      console.log("=== SUBSTITUTION EVENT ===");
       console.log("Selected team ID:", selectedTeamId);
       console.log("Home team ID:", homeTeamId);
       console.log("Away team ID:", awayTeamId);
@@ -681,6 +766,133 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
       name: team?.name || "Unknown Team",
       logo: team?.logo || null,
     };
+  };
+
+  // Helper function to determine if event belongs to home team
+  const isEventFromHomeTeam = (event: any) => {
+    const eventTeamId = String(event.team || event.teamId || "");
+    const homeTeamId = String(currentMatch?.homeTeamId || "");
+    
+    if (eventTeamId === homeTeamId) return true;
+    
+    // Fallback: check via player team lookup
+    if (event.playerId && teams) {
+      const playerTeam = teams.find(team => 
+        team.players?.some(player => 
+          String(player.id) === String(event.playerId) || 
+          String(player._id) === String(event.playerId)
+        )
+      );
+      
+      if (playerTeam) {
+        const playerTeamId = String(playerTeam.id || playerTeam._id);
+        return playerTeamId === homeTeamId;
+      }
+    }
+    
+    return false;
+  };
+
+  // Helper function to get event icon
+  const getEventIcon = (eventType: string) => {
+    switch (eventType) {
+      case "goal":
+        return (
+          <View style={styles.eventIconContainer}>
+            <Ionicons name="football" size={16} color={COLORS.green} />
+          </View>
+        );
+      case "yellow_card":
+        return (
+          <View style={styles.eventIconContainer}>
+            <View style={styles.eventCard} />
+          </View>
+        );
+      case "red_card":
+        return (
+          <View style={styles.eventIconContainer}>
+            <View style={[styles.eventCard, { backgroundColor: COLORS.red }]} />
+          </View>
+        );
+      case "substitution":
+        return (
+          <View style={styles.eventIconContainer}>
+            <Ionicons name="swap-horizontal" size={16} color={COLORS.green} />
+          </View>
+        );
+      default:
+        return (
+          <View style={styles.eventIconContainer}>
+            <Ionicons name="ellipse" size={16} color={COLORS.gray} />
+          </View>
+        );
+    }
+  };
+
+  // IMPROVED Helper function to add time period dividers - WITH PROPER FIRST/SECOND HALF DIVISION
+  const getEventsWithDividers = () => {
+    if (!matchEvents || matchEvents.length === 0) return [];
+    
+    // Sort events by minute in descending order (most recent first)
+    const sortedEvents = [...matchEvents].sort((a, b) => b.minute - a.minute);
+    const eventsWithDividers = [];
+    
+    let hasAddedSecondHalf = false;
+    let hasAddedFirstHalf = false;
+    let hasAddedExtraTime = false;
+    
+    // Go through events from latest to earliest
+    for (let i = 0; i < sortedEvents.length; i++) {
+      const event = sortedEvents[i];
+      
+      // Add extra time divider for events > 90 minutes
+      if (!hasAddedExtraTime && event.minute > 90) {
+        eventsWithDividers.push({
+          type: 'divider',
+          id: 'extra-time',
+          title: 'Extra Time',
+          icon: 'time-outline'
+        });
+        hasAddedExtraTime = true;
+      }
+      
+      // Add second half divider for events between 46-90 minutes
+      if (!hasAddedSecondHalf && event.minute > 45 && event.minute <= 90) {
+        eventsWithDividers.push({
+          type: 'divider',
+          id: 'second-half',
+          title: 'Second Half',
+          icon: 'time-outline'
+        });
+        hasAddedSecondHalf = true;
+      }
+      
+      // Add the actual event
+      eventsWithDividers.push(event);
+      
+      // Add first half divider before events 1-45 minutes (only if there are second half events)
+      if (!hasAddedFirstHalf && hasAddedSecondHalf && event.minute <= 45) {
+        eventsWithDividers.push({
+          type: 'divider',
+          id: 'first-half',
+          title: 'First Half',
+          icon: 'time-outline'
+        });
+        hasAddedFirstHalf = true;
+      }
+    }
+    
+    // If we only have first half events and no divider was added, add it at the end
+    if (!hasAddedFirstHalf && !hasAddedSecondHalf && sortedEvents.length > 0) {
+      eventsWithDividers.push({
+        type: 'divider',
+        id: 'first-half',
+        title: 'First Half',
+        icon: 'time-outline'
+      });
+    }
+    
+    return eventsWithDividers;
   };
 
   // Render player item for selection
@@ -891,7 +1103,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
           📍 {currentMatch.venue || "Football Arena"}
         </Text>
         <Text style={styles.date}>
-          {currentMatch.date || "2025-06-11"} • {currentMatch.time || "10:52"}
+          {currentMatch.date || "2025-06-12"} • {currentMatch.time || "11:15"}
         </Text>
         {lastUpdate && (
           <Text style={styles.lastUpdate}>
@@ -1113,7 +1325,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
             </View>
           )}
 
-          {/* Match events */}
+          {/* IMPROVED Match Events Section with proper first/second half division */}
           <View style={styles.eventsSection}>
             <View style={styles.eventsSectionHeader}>
               <Text style={styles.eventsTitle}>Match Events</Text>
@@ -1127,47 +1339,82 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
             {!matchEvents || matchEvents.length === 0 ? (
               <Text style={styles.noEventsText}>No events yet</Text>
             ) : (
-              matchEvents.map((event, index) => (
-                <View key={index} style={styles.eventItem}>
-                  <View style={styles.eventTime}>
-                    <Text style={styles.eventMinute}>{event.minute}'</Text>
-                  </View>
-                  <View style={styles.eventIcon}>
-                    {event.type === "goal" && (
-                      <Ionicons
-                        name="football"
-                        size={16}
-                        color={COLORS.green}
-                      />
-                    )}
-                    {event.type === "yellow_card" && (
-                      <View style={styles.smallYellowCard} />
-                    )}
-                    {event.type === "red_card" && (
-                      <View style={styles.smallRedCard} />
-                    )}
-                    {event.type === "substitution" && (
-                      <Ionicons
-                        name="swap-horizontal"
-                        size={16}
-                        color={COLORS.blue}
-                      />
-                    )}
-                  </View>
-                  <View style={styles.eventDetails}>
-                    <Text style={styles.eventPlayer}>{event.playerName}</Text>
-                    <Text style={styles.eventType}>
-                      {event.type.replace("_", " ").toUpperCase()}
-                    </Text>
-                    <Text style={styles.eventTeam}>
-                      {event.teamName ||
-                        (event.team === currentMatch.homeTeamId
-                          ? homeTeamInfo.name
-                          : awayTeamInfo.name)}
-                    </Text>
-                  </View>
-                </View>
-              ))
+              <View style={styles.eventsTimeline}>
+                {getEventsWithDividers().map((item, index) => {
+                  if (item.type === 'divider') {
+                    return (
+                      <View key={item.id} style={styles.timeDivider}>
+                        <View style={styles.timeDividerLine} />
+                        <View style={styles.timeDividerContent}>
+                          <Ionicons 
+                            name={item.icon as any} 
+                            size={16} 
+                            color={COLORS.primary} 
+                            style={styles.timeDividerIcon}
+                          />
+                          <Text style={styles.timeDividerText}>{item.title}</Text>
+                        </View>
+                        <View style={styles.timeDividerLine} />
+                      </View>
+                    );
+                  }
+
+                  // Regular event
+                  const event = item;
+                  const isHomeTeamEvent = isEventFromHomeTeam(event);
+                  
+                  return (
+                    <View key={`${event.id}-${index}`} style={styles.eventRow}>
+                      {/* Left side - Home team events */}
+                      <View style={styles.eventSide}>
+                        {isHomeTeamEvent && (
+                          <View style={styles.eventContent}>
+                            <View style={styles.eventPlayerInfo}>
+                              <Text style={styles.eventPlayerName}>
+                                {event.playerName}
+                              </Text>
+                              <Text style={styles.eventDescription}>
+                                {event.type === 'goal' ? 'Goal' :
+                                 event.type === 'yellow_card' ? 'Yellow card' :
+                                 event.type === 'red_card' ? 'Red card' :
+                                 event.type === 'substitution' ? 'Substitution' :
+                                 event.description}
+                              </Text>
+                            </View>
+                            {getEventIcon(event.type)}
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Center - Time */}
+                      <View style={styles.eventTimeCenter}>
+                        <Text style={styles.eventTime}>{event.minute}'</Text>
+                      </View>
+
+                      {/* Right side - Away team events */}
+                      <View style={styles.eventSide}>
+                        {!isHomeTeamEvent && (
+                          <View style={[styles.eventContent, styles.eventContentRight]}>
+                            {getEventIcon(event.type)}
+                            <View style={styles.eventPlayerInfo}>
+                              <Text style={[styles.eventPlayerName, styles.eventPlayerNameRight]}>
+                                {event.playerName}
+                              </Text>
+                              <Text style={[styles.eventDescription, styles.eventDescriptionRight]}>
+                                {event.type === 'goal' ? 'Goal' :
+                                 event.type === 'yellow_card' ? 'Yellow card' :
+                                 event.type === 'red_card' ? 'Red card' :
+                                 event.type === 'substitution' ? 'Substitution' :
+                                 event.description}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
             )}
           </View>
         </View>
@@ -1178,7 +1425,11 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
         visible={showPlayerModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowPlayerModal(false)}
+        onRequestClose={() => {
+          setShowPlayerModal(false);
+          setEventType("");
+          setSelectedTeam("");
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -1193,7 +1444,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
 
             <FlatList
               data={
-                selectedTeam === currentMatch?.homeTeamId
+                String(selectedTeam) === String(currentMatch?.homeTeamId)
                   ? homeTeamPlayers
                   : awayTeamPlayers
               }
@@ -1207,7 +1458,11 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
 
             <TouchableOpacity
               style={styles.cancelModalButton}
-              onPress={() => setShowPlayerModal(false)}
+              onPress={() => {
+                setShowPlayerModal(false);
+                setEventType("");
+                setSelectedTeam("");
+              }}
             >
               <Text style={styles.cancelModalButtonText}>Cancel</Text>
             </TouchableOpacity>
@@ -1220,7 +1475,10 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
         visible={showSubstitutionModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowSubstitutionModal(false)}
+        onRequestClose={() => {
+          setShowSubstitutionModal(false);
+          setSelectedTeam("");
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -1229,7 +1487,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
             <View style={styles.subSection}>
               <Text style={styles.subSectionTitle}>Players On Field</Text>
               <FlatList
-                data={(selectedTeam === currentMatch?.homeTeamId
+                data={(String(selectedTeam) === String(currentMatch?.homeTeamId)
                   ? homeTeamPlayers
                   : awayTeamPlayers
                 ).filter((p) => !p.isSubstitute)}
@@ -1239,7 +1497,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
                     onPress={() => {
                       const outPlayer = item;
                       const substitutes = (
-                        selectedTeam === currentMatch?.homeTeamId
+                        String(selectedTeam) === String(currentMatch?.homeTeamId)
                           ? homeTeamPlayers
                           : awayTeamPlayers
                       ).filter((p) => p.isSubstitute);
@@ -1286,7 +1544,10 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
 
             <TouchableOpacity
               style={styles.cancelModalButton}
-              onPress={() => setShowSubstitutionModal(false)}
+              onPress={() => {
+                setShowSubstitutionModal(false);
+                setSelectedTeam("");
+              }}
             >
               <Text style={styles.cancelModalButtonText}>Cancel</Text>
             </TouchableOpacity>
@@ -1663,57 +1924,112 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     padding: 20,
   },
-  eventItem: {
+  // NEW REDESIGNED EVENT STYLES - Based on your image
+  eventsTimeline: {
+    paddingVertical: 10,
+  },
+  eventRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.1)",
+    marginVertical: 8,
+    minHeight: 50,
   },
-  eventTime: {
-    width: 40,
-  },
-  eventMinute: {
-    color: COLORS.primary,
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  eventIcon: {
-    width: 30,
-    alignItems: "center",
-  },
-  smallYellowCard: {
-    width: 8,
-    height: 12,
-    backgroundColor: "#FFD700",
-    borderRadius: 1,
-  },
-  smallRedCard: {
-    width: 8,
-    height: 12,
-    backgroundColor: COLORS.red,
-    borderRadius: 1,
-  },
-  eventDetails: {
+  eventSide: {
     flex: 1,
-    marginLeft: 10,
+    paddingHorizontal: 10,
   },
-  eventPlayer: {
+  eventContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  eventContentRight: {
+    justifyContent: "flex-start",
+  },
+  eventPlayerInfo: {
+    marginHorizontal: 12,
+  },
+  eventPlayerName: {
     color: COLORS.white,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "bold",
+    textAlign: "right",
   },
-  eventType: {
+  eventPlayerNameRight: {
+    textAlign: "left",
+  },
+  eventDescription: {
     color: COLORS.gray,
     fontSize: 12,
     marginTop: 2,
+    textAlign: "right",
   },
-  eventTeam: {
+  eventDescriptionRight: {
+    textAlign: "left",
+  },
+  eventIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  eventCard: {
+    width: 14,
+    height: 18,
+    backgroundColor: "#FFD700",
+    borderRadius: 2,
+  },
+  eventTimeCenter: {
+    width: 60,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  eventTime: {
     color: COLORS.primary,
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: "bold",
-    marginTop: 2,
+    textAlign: "center",
   },
+  // Time divider styles - IMPROVED FOR FIRST/SECOND HALF DIVISION
+  timeDivider: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: 20,
+    paddingVertical: 12,
+  },
+  timeDividerLine: {
+    flex: 1,
+    height: 2,
+    backgroundColor: "rgba(255,255,255,0.3)",
+  },
+  timeDividerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    backgroundColor: COLORS.background,
+    borderRadius: 20,
+    paddingVertical: 8,
+    elevation: 2,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  timeDividerIcon: {
+    marginRight: 8,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 12,
+    padding: 4,
+  },
+  timeDividerText: {
+    color: COLORS.primary,
+    fontSize: 16,
+    fontWeight: "bold",
+    letterSpacing: 0.5,
+  },
+  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.8)",
@@ -1726,6 +2042,11 @@ const styles = StyleSheet.create({
     padding: 20,
     width: "90%",
     maxHeight: "80%",
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
   },
   modalTitle: {
     color: COLORS.primary,
@@ -1741,9 +2062,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: COLORS.black,
-    padding: 10,
+    padding: 12,
     borderRadius: 10,
-    marginBottom: 10,
+    marginBottom: 8,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   playerAvatar: {
     width: 40,
@@ -1762,6 +2088,7 @@ const styles = StyleSheet.create({
   playerNumber: {
     color: COLORS.black,
     fontWeight: "bold",
+    fontSize: 16,
   },
   playerDetails: {
     flex: 1,
@@ -1788,7 +2115,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 15,
     alignItems: "center",
-    marginTop: 10,
+    marginTop: 15,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
   cancelModalButtonText: {
     color: COLORS.white,
@@ -1796,13 +2128,14 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   subSection: {
-    marginBottom: 15,
+    marginBottom: 20,
   },
   subSectionTitle: {
     color: COLORS.primary,
     fontSize: 16,
     fontWeight: "bold",
     marginBottom: 10,
+    paddingLeft: 5,
   },
 });
 
