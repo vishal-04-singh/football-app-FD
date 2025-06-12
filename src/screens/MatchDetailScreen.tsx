@@ -1,80 +1,106 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState, useEffect } from "react"
-import { 
-  View, Text, StyleSheet, ScrollView, Image, 
-  TouchableOpacity, SafeAreaView, StatusBar
-} from "react-native"
-import { useTournament } from "../contexts/TournamentContext"
-import { useNavigation, useRoute } from "@react-navigation/native"
-import { COLORS } from "../constants/colors"
-import type { Match, MatchEvent } from "../types"
-import { Ionicons } from "@expo/vector-icons"
+import type React from "react";
+import { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Image,
+  TouchableOpacity,
+  SafeAreaView,
+  StatusBar,
+} from "react-native";
+import { useTournament } from "../contexts/TournamentContext";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import { COLORS } from "../constants/colors";
+import type { Match, MatchEvent } from "../types";
+import { Ionicons } from "@expo/vector-icons";
+// Import the reusable component
+import MatchEventsTimeline from "../../components/MatchEventsTimeline";
+import MatchStatistics from "../../components/MatchStatistics"
+
 
 const MatchDetailScreen: React.FC = () => {
-  const { tournament } = useTournament()
-  const navigation = useNavigation()
-  const route = useRoute()
+  const { tournament } = useTournament();
+  const navigation = useNavigation();
+  const route = useRoute();
   // @ts-ignore - ignore type issues with route params
-  const { matchId } = route.params || {}
-  
-  const [match, setMatch] = useState<Match | null>(null)
-  const [sortedEvents, setSortedEvents] = useState<MatchEvent[]>([])
-  const [activeTab, setActiveTab] = useState<'events' | 'stats'>('events')
-  
+  const { matchId } = route.params || {};
+
+  const [match, setMatch] = useState<Match | null>(null);
+  const [sortedEvents, setSortedEvents] = useState<MatchEvent[]>([]);
+  const [activeTab, setActiveTab] = useState<"events" | "stats">("events");
+
   useEffect(() => {
     if (tournament?.matches && matchId) {
-      const foundMatch = tournament.matches.find(m => 
-        m.id === matchId || m._id === matchId || String(m.id) === String(matchId)
-      )
-      
+      const foundMatch = tournament.matches.find(
+        (m) =>
+          m.id === matchId ||
+          m._id === matchId ||
+          String(m.id) === String(matchId)
+      );
+
       if (foundMatch) {
-        setMatch(foundMatch)
-        
+        setMatch(foundMatch);
+
         // Sort events by minute
         if (foundMatch.events && foundMatch.events.length > 0) {
           // Clone events array and add teamId if not present
-          const eventsWithTeamIds = foundMatch.events.map(event => {
+          const eventsWithTeamIds = foundMatch.events.map((event) => {
             // If event doesn't have teamId, attempt to infer it
-            if (!event.teamId) {
-              // Logic to determine team - this is a simplification
-              // You might need more complex logic based on your app's data structure
-              const isHomeTeamPlayer = true // Replace with actual logic
+            if (!event.teamId && !event.team) {
+              // Try to determine team from player data or other logic
+              // For now, we'll use a placeholder - you may need to implement proper logic
+              const isHomeTeamPlayer = true; // Replace with actual logic based on your data
               return {
                 ...event,
-                teamId: isHomeTeamPlayer ? foundMatch.homeTeamId : foundMatch.awayTeamId
-              }
+                teamId: isHomeTeamPlayer
+                  ? foundMatch.homeTeamId
+                  : foundMatch.awayTeamId,
+                team: isHomeTeamPlayer
+                  ? foundMatch.homeTeamId
+                  : foundMatch.awayTeamId,
+              };
             }
-            return event
-          })
-          
+            // Ensure both team and teamId are present for compatibility
+            return {
+              ...event,
+              team: event.team || event.teamId,
+              teamId: event.teamId || event.team,
+            };
+          });
+
           // Sort events by minute
-          const events = [...eventsWithTeamIds].sort((a, b) => a.minute - b.minute)
-          setSortedEvents(events)
+          const events = [...eventsWithTeamIds].sort(
+            (a, b) => a.minute - b.minute
+          );
+          setSortedEvents(events);
         }
       }
     }
-  }, [tournament, matchId])
+  }, [tournament, matchId]);
 
   const getTeamInfo = (teamId: string) => {
-    const team = tournament?.teams.find((team) => 
-      team.id === teamId || 
-      team._id === teamId || 
-      String(team.id) === String(teamId) || 
-      String(team._id) === String(teamId)
+    const team = tournament?.teams.find(
+      (team) =>
+        team.id === teamId ||
+        team._id === teamId ||
+        String(team.id) === String(teamId) ||
+        String(team._id) === String(teamId)
     );
-    
+
     if (!team) {
       return { name: "Unknown Team", logo: null };
     }
-    
+
     return {
       name: team.name,
       logo: team.logo,
     };
-  }
-  
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
     const date = new Date(dateString);
@@ -82,29 +108,9 @@ const MatchDetailScreen: React.FC = () => {
       weekday: "long",
       day: "numeric",
       month: "long",
-      year: "numeric"
+      year: "numeric",
     });
-  }
-
-  const renderEventIcon = (eventType: string) => {
-    switch (eventType) {
-      case "goal":
-        return <Ionicons name="football" size={18} color={COLORS.green} />;
-      case "yellow_card":
-        return <View style={styles.yellowCard} />;
-      case "red_card":
-        return <View style={styles.redCard} />;
-      case "substitution":
-        return (
-          <View style={styles.substitutionIcons}>
-            <Ionicons name="arrow-down" size={14} color={COLORS.red} style={styles.subIcon} />
-            <Ionicons name="arrow-up" size={14} color={COLORS.green} />
-          </View>
-        );
-      default:
-        return null;
-    }
-  }
+  };
 
   if (!match) {
     return (
@@ -113,36 +119,71 @@ const MatchDetailScreen: React.FC = () => {
       </View>
     );
   }
-  
+
   const homeTeam = getTeamInfo(match.homeTeamId);
   const awayTeam = getTeamInfo(match.awayTeamId);
 
-  // Group events by half-time
-  const firstHalfEvents = sortedEvents.filter(event => event.minute <= 45);
-  const secondHalfEvents = sortedEvents.filter(event => event.minute > 45 && event.minute <= 90);
-  const extraTimeEvents = sortedEvents.filter(event => event.minute > 90);
-
-  // Count stats
+  // Count stats for statistics tab
   const homeStats = {
-    goals: sortedEvents.filter(e => e.type === "goal" && e.teamId === match.homeTeamId).length || 0,
-    yellowCards: sortedEvents.filter(e => e.type === "yellow_card" && e.teamId === match.homeTeamId).length || 0,
-    redCards: sortedEvents.filter(e => e.type === "red_card" && e.teamId === match.homeTeamId).length || 0,
-    substitutions: sortedEvents.filter(e => e.type === "substitution" && e.teamId === match.homeTeamId).length || 0
-  };
-  
-  const awayStats = {
-    goals: sortedEvents.filter(e => e.type === "goal" && e.teamId === match.awayTeamId).length || 0,
-    yellowCards: sortedEvents.filter(e => e.type === "yellow_card" && e.teamId === match.awayTeamId).length || 0,
-    redCards: sortedEvents.filter(e => e.type === "red_card" && e.teamId === match.awayTeamId).length || 0,
-    substitutions: sortedEvents.filter(e => e.type === "substitution" && e.teamId === match.awayTeamId).length || 0
+    goals:
+      sortedEvents.filter(
+        (e) =>
+          e.type === "goal" &&
+          (e.teamId === match.homeTeamId || e.team === match.homeTeamId)
+      ).length || 0,
+    yellowCards:
+      sortedEvents.filter(
+        (e) =>
+          e.type === "yellow_card" &&
+          (e.teamId === match.homeTeamId || e.team === match.homeTeamId)
+      ).length || 0,
+    redCards:
+      sortedEvents.filter(
+        (e) =>
+          e.type === "red_card" &&
+          (e.teamId === match.homeTeamId || e.team === match.homeTeamId)
+      ).length || 0,
+    substitutions:
+      sortedEvents.filter(
+        (e) =>
+          e.type === "substitution" &&
+          (e.teamId === match.homeTeamId || e.team === match.homeTeamId)
+      ).length || 0,
   };
 
- return (
+  const awayStats = {
+    goals:
+      sortedEvents.filter(
+        (e) =>
+          e.type === "goal" &&
+          (e.teamId === match.awayTeamId || e.team === match.awayTeamId)
+      ).length || 0,
+    yellowCards:
+      sortedEvents.filter(
+        (e) =>
+          e.type === "yellow_card" &&
+          (e.teamId === match.awayTeamId || e.team === match.awayTeamId)
+      ).length || 0,
+    redCards:
+      sortedEvents.filter(
+        (e) =>
+          e.type === "red_card" &&
+          (e.teamId === match.awayTeamId || e.team === match.awayTeamId)
+      ).length || 0,
+    substitutions:
+      sortedEvents.filter(
+        (e) =>
+          e.type === "substitution" &&
+          (e.teamId === match.awayTeamId || e.team === match.awayTeamId)
+      ).length || 0,
+  };
+
+  return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
-      
+
       <View style={styles.header}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
@@ -161,11 +202,14 @@ const MatchDetailScreen: React.FC = () => {
               <Text style={styles.completedText}>COMPLETED</Text>
             </View>
           </View>
-          
+
           <View style={styles.scoreContainer}>
             <View style={styles.teamSection}>
               {homeTeam.logo ? (
-                <Image source={{ uri: homeTeam.logo }} style={styles.teamLogo} />
+                <Image
+                  source={{ uri: homeTeam.logo }}
+                  style={styles.teamLogo}
+                />
               ) : (
                 <View style={styles.teamLogoPlaceholder}>
                   <Text style={styles.teamLogoPlaceholderText}>
@@ -175,7 +219,7 @@ const MatchDetailScreen: React.FC = () => {
               )}
               <Text style={styles.teamName}>{homeTeam.name}</Text>
             </View>
-            
+
             <View style={styles.scoreSection}>
               <View style={styles.scoreBox}>
                 <Text style={styles.score}>{match.homeScore}</Text>
@@ -183,10 +227,13 @@ const MatchDetailScreen: React.FC = () => {
                 <Text style={styles.score}>{match.awayScore}</Text>
               </View>
             </View>
-            
+
             <View style={styles.teamSection}>
               {awayTeam.logo ? (
-                <Image source={{ uri: awayTeam.logo }} style={styles.teamLogo} />
+                <Image
+                  source={{ uri: awayTeam.logo }}
+                  style={styles.teamLogo}
+                />
               ) : (
                 <View style={styles.teamLogoPlaceholder}>
                   <Text style={styles.teamLogoPlaceholderText}>
@@ -197,240 +244,71 @@ const MatchDetailScreen: React.FC = () => {
               <Text style={styles.teamName}>{awayTeam.name}</Text>
             </View>
           </View>
-          
+
           <View style={styles.venueContainer}>
             <Text style={styles.venue}>📍 {match.venue}</Text>
             <Text style={styles.time}>{match.time}</Text>
           </View>
         </View>
-        
+
         {/* Tab navigation */}
         <View style={styles.tabsContainer}>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'events' && styles.activeTab]} 
-            onPress={() => setActiveTab('events')}
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "events" && styles.activeTab]}
+            onPress={() => setActiveTab("events")}
           >
-            <Text style={[styles.tabText, activeTab === 'events' && styles.activeTabText]}>TIMELINE</Text>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "events" && styles.activeTabText,
+              ]}
+            >
+              TIMELINE
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'stats' && styles.activeTab]} 
-            onPress={() => setActiveTab('stats')}
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "stats" && styles.activeTab]}
+            onPress={() => setActiveTab("stats")}
           >
-            <Text style={[styles.tabText, activeTab === 'stats' && styles.activeTabText]}>STATISTICS</Text>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "stats" && styles.activeTabText,
+              ]}
+            >
+              STATISTICS
+            </Text>
           </TouchableOpacity>
         </View>
-        
-        {/* Match Events Timeline */}
-        {activeTab === 'events' && (
-          <View style={styles.timelineContainer}>
-            {sortedEvents.length === 0 ? (
-              <View style={styles.noEventsContainer}>
-                <Text style={styles.noEventsText}>No events recorded for this match</Text>
-              </View>
-            ) : (
-              <>
-                {/* First half */}
-                {firstHalfEvents.length > 0 && (
-                  <View style={styles.halfSection}>
-                    <View style={styles.halfHeader}>
-                      <Ionicons name="time-outline" size={18} color={COLORS.primary} />
-                      <Text style={styles.halfTitle}>First Half</Text>
-                    </View>
-                    
-                    {firstHalfEvents.map((event, index) => (
-                      <View key={`first-${index}`} style={styles.eventRow}>
-                        <View style={styles.minuteBox}>
-                          <Text style={styles.minuteText}>{event.minute}'</Text>
-                        </View>
-                        <View style={styles.eventIconContainer}>
-                          {renderEventIcon(event.type)}
-                        </View>
-                        <View style={styles.eventDetails}>
-                          <Text style={styles.playerName}>{event.playerName}</Text>
-                          <Text style={styles.eventType}>
-                            {event.type.replace('_', ' ')}
-                          </Text>
-                        </View>
-                        <View style={styles.teamIndicator}>
-                          <Text style={styles.teamIndicatorText}>
-                            {event.teamId === match.homeTeamId ? homeTeam.name : awayTeam.name}
-                          </Text>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                
-                {/* Half time indicator */}
-                <View style={styles.halfTimeSeparator}>
-                  <View style={styles.halfTimeLine} />
-                  <View style={styles.halfTimeBadge}>
-                    <Text style={styles.halfTimeText}>HALF TIME</Text>
-                  </View>
-                  <View style={styles.halfTimeLine} />
-                </View>
-                
-                {/* Second half */}
-                {secondHalfEvents.length > 0 && (
-                  <View style={styles.halfSection}>
-                    <View style={styles.halfHeader}>
-                      <Ionicons name="time-outline" size={18} color={COLORS.primary} />
-                      <Text style={styles.halfTitle}>Second Half</Text>
-                    </View>
-                    
-                    {secondHalfEvents.map((event, index) => (
-                      <View key={`second-${index}`} style={styles.eventRow}>
-                        <View style={styles.minuteBox}>
-                          <Text style={styles.minuteText}>{event.minute}'</Text>
-                        </View>
-                        <View style={styles.eventIconContainer}>
-                          {renderEventIcon(event.type)}
-                        </View>
-                        <View style={styles.eventDetails}>
-                          <Text style={styles.playerName}>{event.playerName}</Text>
-                          <Text style={styles.eventType}>
-                            {event.type.replace('_', ' ')}
-                          </Text>
-                        </View>
-                        <View style={styles.teamIndicator}>
-                          <Text style={styles.teamIndicatorText}>
-                            {event.teamId === match.homeTeamId ? homeTeam.name : awayTeam.name}
-                          </Text>
-                        </View>
-                      </View>
-                    ))}
-                  </View>
-                )}
-                
-                {/* Extra time */}
-                {extraTimeEvents.length > 0 && (
-                  <>
-                    <View style={styles.extraTimeSeparator}>
-                      <View style={styles.halfTimeLine} />
-                      <View style={styles.extraTimeBadge}>
-                        <Text style={styles.extraTimeText}>EXTRA TIME</Text>
-                      </View>
-                      <View style={styles.halfTimeLine} />
-                    </View>
-                  
-                    <View style={styles.halfSection}>
-                      <View style={styles.halfHeader}>
-                        <Ionicons name="time-outline" size={18} color={COLORS.primary} />
-                        <Text style={styles.halfTitle}>Extra Time</Text>
-                      </View>
-                      
-                      {extraTimeEvents.map((event, index) => (
-                        <View key={`extra-${index}`} style={styles.eventRow}>
-                          <View style={styles.minuteBox}>
-                            <Text style={styles.minuteText}>{event.minute}'</Text>
-                          </View>
-                          <View style={styles.eventIconContainer}>
-                            {renderEventIcon(event.type)}
-                          </View>
-                          <View style={styles.eventDetails}>
-                            <Text style={styles.playerName}>{event.playerName}</Text>
-                            <Text style={styles.eventType}>
-                              {event.type.replace('_', ' ')}
-                            </Text>
-                          </View>
-                          <View style={styles.teamIndicator}>
-                            <Text style={styles.teamIndicatorText}>
-                              {event.teamId === match.homeTeamId ? homeTeam.name : awayTeam.name}
-                            </Text>
-                          </View>
-                        </View>
-                      ))}
-                    </View>
-                  </>
-                )}
-              </>
-            )}
-          </View>
+
+        {/* REPLACED: Match Events Timeline with reusable component */}
+        {activeTab === "events" && (
+          <MatchEventsTimeline
+            matchEvents={sortedEvents}
+            homeTeamId={match.homeTeamId}
+            awayTeamId={match.awayTeamId}
+            teams={tournament?.teams}
+          />
         )}
-        
-        {/* Match Statistics */}
-        {activeTab === 'stats' && (
-          <View style={styles.statsContainer}>
-            <View style={styles.statCard}>
-              <View style={styles.statHeader}>
-                <Text style={styles.statTitle}>Match Statistics</Text>
-              </View>
-              
-              {/* Goals */}
-              <View style={styles.statRow}>
-                <View style={styles.teamStatValue}>
-                  <Text style={styles.statValueText}>{match.homeScore}</Text>
-                </View>
-                <View style={styles.statType}>
-                  <Text style={styles.statTypeText}>Goals</Text>
-                </View>
-                <View style={styles.teamStatValue}>
-                  <Text style={styles.statValueText}>{match.awayScore}</Text>
-                </View>
-              </View>
-              
-              {/* Yellow Cards */}
-              <View style={styles.statRow}>
-                <View style={styles.teamStatValue}>
-                  <Text style={styles.statValueText}>{homeStats.yellowCards}</Text>
-                </View>
-                <View style={styles.statType}>
-                  <View style={styles.cardIndicator}>
-                    <View style={styles.yellowCardIndicator} />
-                    <Text style={styles.statTypeText}>Yellow Cards</Text>
-                  </View>
-                </View>
-                <View style={styles.teamStatValue}>
-                  <Text style={styles.statValueText}>{awayStats.yellowCards}</Text>
-                </View>
-              </View>
-              
-              {/* Red Cards */}
-              <View style={styles.statRow}>
-                <View style={styles.teamStatValue}>
-                  <Text style={styles.statValueText}>{homeStats.redCards}</Text>
-                </View>
-                <View style={styles.statType}>
-                  <View style={styles.cardIndicator}>
-                    <View style={styles.redCardIndicator} />
-                    <Text style={styles.statTypeText}>Red Cards</Text>
-                  </View>
-                </View>
-                <View style={styles.teamStatValue}>
-                  <Text style={styles.statValueText}>{awayStats.redCards}</Text>
-                </View>
-              </View>
-              
-              {/* Substitutions */}
-              <View style={styles.statRow}>
-                <View style={styles.teamStatValue}>
-                  <Text style={styles.statValueText}>{homeStats.substitutions}</Text>
-                </View>
-                <View style={styles.statType}>
-                  <View style={styles.subIndicator}>
-                    <Ionicons name="swap-horizontal" size={16} color={COLORS.primary} />
-                    <Text style={styles.statTypeText}>Substitutions</Text>
-                  </View>
-                </View>
-                <View style={styles.teamStatValue}>
-                  <Text style={styles.statValueText}>{awayStats.substitutions}</Text>
-                </View>
-              </View>
-              
-              {/* Team Names */}
-              <View style={styles.teamNameRow}>
-                <Text style={styles.statTeamName}>{homeTeam.name}</Text>
-                <View style={{width: 100}} />
-                <Text style={styles.statTeamName}>{awayTeam.name}</Text>
-              </View>
-            </View>
-          </View>
+
+        {activeTab === "stats" && (
+          <MatchStatistics
+            matchEvents={sortedEvents}
+            homeTeamId={match.homeTeamId}
+            awayTeamId={match.awayTeamId}
+            homeTeamName={homeTeam.name}
+            awayTeamName={awayTeam.name}
+            homeScore={match.homeScore}
+            awayScore={match.awayScore}
+            teams={tournament?.teams}
+          />
         )}
       </ScrollView>
     </SafeAreaView>
-  )
-}
+  );
+};
 
+// REMOVED: All timeline-related styles since they're now in the MatchEventsTimeline component
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -468,7 +346,7 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 16,
   },
-  
+
   // Score card styles
   scoreCard: {
     backgroundColor: COLORS.background,
@@ -519,14 +397,14 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 8,
   },
   teamLogoPlaceholderText: {
     color: COLORS.black,
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   teamName: {
     color: COLORS.white,
@@ -568,7 +446,7 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     fontSize: 14,
   },
-  
+
   // Tab navigation styles
   tabsContainer: {
     flexDirection: "row",
@@ -595,141 +473,7 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: COLORS.black,
   },
-  
-  // Timeline styles
-  timelineContainer: {
-    backgroundColor: COLORS.background,
-    borderRadius: 15,
-    margin: 16,
-    padding: 16,
-  },
-  halfSection: {
-    marginBottom: 16,
-  },
-  halfHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  halfTitle: {
-    color: COLORS.primary,
-    fontSize: 16,
-    fontWeight: "bold",
-    marginLeft: 8,
-  },
-  eventRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  minuteBox: {
-    width: 40,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: COLORS.black,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  minuteText: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  eventIconContainer: {
-    width: 30,
-    alignItems: "center",
-    marginHorizontal: 8,
-  },
-  yellowCard: {
-    width: 12,
-    height: 16,
-    backgroundColor: "#FFD700", // Yellow card color
-    borderRadius: 2,
-  },
-  redCard: {
-    width: 12,
-    height: 16,
-    backgroundColor: COLORS.red,
-    borderRadius: 2,
-  },
-  substitutionIcons: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  subIcon: {
-    marginRight: -2,
-  },
-  eventDetails: {
-    flex: 1,
-  },
-  playerName: {
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  eventType: {
-    color: COLORS.gray,
-    fontSize: 12,
-  },
-  teamIndicator: {
-    maxWidth: 100,
-  },
-  teamIndicatorText: {
-    color: COLORS.gray,
-    fontSize: 12,
-    textAlign: "right",
-  },
-  halfTimeSeparator: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 16,
-  },
-  halfTimeLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.2)",
-  },
-  halfTimeBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: COLORS.background,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-    borderRadius: 15,
-    marginHorizontal: 8,
-  },
-  halfTimeText: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  extraTimeSeparator: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 16,
-  },
-  extraTimeBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: "#9C27B0", // Purple color for extra time
-    borderRadius: 15,
-    marginHorizontal: 8,
-  },
-  extraTimeText: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  noEventsContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 40,
-  },
-  noEventsText: {
-    color: COLORS.gray,
-    fontSize: 16,
-  },
-  
+
   // Stats styles
   statsContainer: {
     margin: 16,
@@ -809,6 +553,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "bold",
   },
-})
+});
 
-export default MatchDetailScreen
+export default MatchDetailScreen;
