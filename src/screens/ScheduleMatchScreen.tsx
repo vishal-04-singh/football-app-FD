@@ -373,8 +373,8 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         }));
       } else {
         // Add to substitutes (max 3)
-        if (currentSquad.substitutes.length >= 3) {
-          Alert.alert("Limit Reached", "Maximum 3 substitutes allowed");
+        if (currentSquad.substitutes.length >= 4) {
+          Alert.alert("Limit Reached", "Maximum 4 substitutes allowed");
           return;
         }
 
@@ -459,13 +459,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       return;
     }
 
-    if (homeSquad.substitutes.length !== 3) {
-      Alert.alert("Squad Error", "Home team must have exactly 3 substitutes");
+    if (homeSquad.substitutes.length !== 4) {
+      Alert.alert("Squad Error", "Home team must have exactly 4 substitutes");
       return;
     }
 
-    if (awaySquad.substitutes.length !== 3) {
-      Alert.alert("Squad Error", "Away team must have exactly 3 substitutes");
+    if (awaySquad.substitutes.length !== 4) {
+      Alert.alert("Squad Error", "Away team must have exactly 4 substitutes");
       return;
     }
 
@@ -925,10 +925,15 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>Schedule New Match</Text>
 
-              <View style={styles.weekSelector}>
-                <Text style={styles.inputLabel}>Tournament Week:</Text>
+
+              <Text style={styles.inputLabel}>Tournament Week:</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.weekSelector}
+              >
                 <View style={styles.weekButtons}>
-                  {[1, 2, 3].map((week) => (
+                  {[1, 2, 3,4].map((week) => (
                     <TouchableOpacity
                       key={week}
                       style={[
@@ -949,7 +954,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     </TouchableOpacity>
                   ))}
                 </View>
-              </View>
+              </ScrollView>
 
               <View style={styles.teamSelection}>
                 <Text style={styles.inputLabel}>Home Team:</Text>
@@ -1072,7 +1077,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       styles.squadButton,
                       !selectedHomeTeam && styles.squadButtonDisabled,
                       homeSquad.mainPlayers.length === 7 &&
-                        homeSquad.substitutes.length === 3 &&
+                        homeSquad.substitutes.length === 4 &&
                         styles.squadButtonComplete,
                     ]}
                     onPress={() => {
@@ -1094,7 +1099,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           !selectedHomeTeam
                             ? COLORS.gray
                             : homeSquad.mainPlayers.length === 7 &&
-                              homeSquad.substitutes.length === 3
+                              homeSquad.substitutes.length === 4
                             ? COLORS.green
                             : COLORS.primary
                         }
@@ -1104,12 +1109,12 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           styles.squadButtonText,
                           !selectedHomeTeam && styles.squadButtonTextDisabled,
                           homeSquad.mainPlayers.length === 7 &&
-                            homeSquad.substitutes.length === 3 &&
+                            homeSquad.substitutes.length === 4 &&
                             styles.squadButtonTextComplete,
                         ]}
                       >
                         Home Squad (
-                        {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/10)
+                        {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/11)
                       </Text>
                       <Ionicons
                         name={showHomePlayerPicker ? "chevron-up" : "chevron-down"}
@@ -1119,7 +1124,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     </View>
                     <Text style={styles.squadButtonSubtext}>
                       Main: {homeSquad.mainPlayers.length}/7 • Sub:{" "}
-                      {homeSquad.substitutes.length}/3
+                      {homeSquad.substitutes.length}/4
                     </Text>
                   </TouchableOpacity>
 
@@ -1194,13 +1199,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                                     styles.playerDropdownButton,
                                     styles.subPlayerButton,
                                     isSubSelected && styles.playerDropdownButtonSelectedSub,
-                                    homeSquad.substitutes.length >= 3 && !isSubSelected && styles.playerDropdownButtonDisabled
+                                    homeSquad.substitutes.length >= 4 && !isSubSelected && styles.playerDropdownButtonDisabled
                                   ]}
                                   onPress={() => {
                                     console.log("Sub button pressed for:", player.name);
                                     togglePlayerInSquad(player, "home", "sub");
                                   }}
-                                  disabled={homeSquad.substitutes.length >= 3 && !isSubSelected}
+                                  disabled={homeSquad.substitutes.length >= 4 && !isSubSelected}
                                 >
                                   <Text style={[
                                     styles.playerDropdownButtonText,
@@ -1219,7 +1224,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       {/* Dropdown Footer */}
                       <View style={styles.dropdownFooter}>
                         <Text style={styles.dropdownFooterText}>
-                          Selected: {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/10 players
+                          Selected: {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/11 players
                         </Text>
                       </View>
                     </View>
@@ -1233,7 +1238,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       styles.squadButton,
                       !selectedAwayTeam && styles.squadButtonDisabled,
                       awaySquad.mainPlayers.length === 7 &&
-                        awaySquad.substitutes.length === 3 &&
+                        awaySquad.substitutes.length === 4 &&
                         styles.squadButtonComplete,
                     ]}
                     onPress={() => {
@@ -1255,7 +1260,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           !selectedAwayTeam
                             ? COLORS.gray
                             : awaySquad.mainPlayers.length === 7 &&
-                              awaySquad.substitutes.length === 3
+                              awaySquad.substitutes.length === 4
                             ? COLORS.green
                             : COLORS.primary
                         }
@@ -1265,12 +1270,12 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           styles.squadButtonText,
                           !selectedAwayTeam && styles.squadButtonTextDisabled,
                           awaySquad.mainPlayers.length === 7 &&
-                            awaySquad.substitutes.length === 3 &&
+                            awaySquad.substitutes.length === 4 &&
                             styles.squadButtonTextComplete,
                         ]}
                       >
                         Away Squad (
-                        {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/10)
+                        {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/11)
                       </Text>
                       <Ionicons
                         name={showAwayPlayerPicker ? "chevron-up" : "chevron-down"}
@@ -1280,7 +1285,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     </View>
                     <Text style={styles.squadButtonSubtext}>
                       Main: {awaySquad.mainPlayers.length}/7 • Sub:{" "}
-                      {awaySquad.substitutes.length}/3
+                      {awaySquad.substitutes.length}/4
                     </Text>
                   </TouchableOpacity>
 
@@ -1355,13 +1360,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                                     styles.playerDropdownButton,
                                     styles.subPlayerButton,
                                     isSubSelected && styles.playerDropdownButtonSelectedSub,
-                                    awaySquad.substitutes.length >= 3 && !isSubSelected && styles.playerDropdownButtonDisabled
+                                    awaySquad.substitutes.length >= 4 && !isSubSelected && styles.playerDropdownButtonDisabled
                                   ]}
                                   onPress={() => {
                                     console.log("Sub button pressed for:", player.name);
                                     togglePlayerInSquad(player, "away", "sub");
                                   }}
-                                  disabled={awaySquad.substitutes.length >= 3 && !isSubSelected}
+                                  disabled={awaySquad.substitutes.length >= 4 && !isSubSelected}
                                 >
                                   <Text style={[
                                     styles.playerDropdownButtonText,
@@ -1380,7 +1385,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       {/* Dropdown Footer */}
                       <View style={styles.dropdownFooter}>
                         <Text style={styles.dropdownFooterText}>
-                          Selected: {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/10 players
+                          Selected: {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/11 players
                         </Text>
                       </View>
                     </View>

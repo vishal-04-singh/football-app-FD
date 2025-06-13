@@ -1,13 +1,30 @@
 "use client"
 
 import type React from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert } from "react-native"
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Image } from "react-native"
 import { useAuth } from "../contexts/AuthContext"
 import { useTournament } from "../contexts/TournamentContext"
 import { COLORS } from "../constants/colors"
 import { Ionicons } from "@expo/vector-icons"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { debugTeamAssignment } from "../../utils/debugUtils"
+import { LinearGradient } from "expo-linear-gradient"
+
+interface PlayerStats {
+  _id: string
+  playerId: string
+  playerName: string
+  teamId: string
+  teamName: string
+  goals: number
+  assists: number
+  yellowCards: number
+  redCards: number
+  appearances: number
+  photo?: string
+  position: string
+  jerseyNumber: number
+}
 
 const HomeScreen: React.FC = () => {
   const { user } = useAuth()
@@ -20,6 +37,96 @@ const HomeScreen: React.FC = () => {
       debugTeamAssignment(user, teams)
     }
   }, [user, teams])
+
+  // Calculate top scorers from existing data
+  const topScorers = useMemo(() => {
+    if (!teams || !matches || teams.length === 0 || matches.length === 0) {
+      return []
+    }
+
+    // Create a map to store player statistics
+    const playerStatsMap = new Map<string, PlayerStats>()
+
+    // Initialize all players with zero stats
+    teams.forEach(team => {
+      if (team.players && team.players.length > 0) {
+        team.players.forEach(player => {
+          const playerId = player.id || player._id
+          playerStatsMap.set(playerId, {
+            _id: playerId,
+            playerId: playerId,
+            playerName: player.name,
+            teamId: team._id || team.id,
+            teamName: team.name,
+            goals: 0,
+            assists: 0,
+            yellowCards: 0,
+            redCards: 0,
+            appearances: 0,
+            photo: player.photo || null,
+            position: player.position,
+            jerseyNumber: player.jerseyNumber
+          })
+        })
+      }
+    })
+
+    // Process match events to calculate statistics
+    matches.forEach(match => {
+      if (match.events && match.events.length > 0) {
+        const participatingPlayers = new Set<string>()
+
+        match.events.forEach(event => {
+          const playerId = event.playerId
+          if (!playerId || !playerStatsMap.has(playerId)) return
+
+          const playerStats = playerStatsMap.get(playerId)!
+          
+          // Track player appearance in this match
+          participatingPlayers.add(playerId)
+
+          // Update statistics based on event type
+          switch (event.type) {
+            case 'goal':
+              playerStats.goals += 1
+              break
+            case 'yellow_card':
+              playerStats.yellowCards += 1
+              break
+            case 'red_card':
+              playerStats.redCards += 1
+              break
+            case 'substitution':
+              // Handle substitution logic if needed
+              break
+            default:
+              break
+          }
+
+          playerStatsMap.set(playerId, playerStats)
+        })
+
+        // Update appearances for all participating players
+        participatingPlayers.forEach(playerId => {
+          const playerStats = playerStatsMap.get(playerId)!
+          playerStats.appearances += 1
+          playerStatsMap.set(playerId, playerStats)
+        })
+      }
+    })
+
+    // Convert map to array and sort by goals, then by name
+    const allPlayerStats = Array.from(playerStatsMap.values())
+      .filter(player => player.goals > 0) // Only include players with goals
+      .sort((a, b) => {
+        if (b.goals !== a.goals) {
+          return b.goals - a.goals // Sort by goals descending
+        }
+        return a.playerName.localeCompare(b.playerName) // Then by name ascending
+      })
+
+    return allPlayerStats.slice(0, 5) // Return top 5
+  }, [teams, matches])
 
   const onRefresh = async () => {
     setRefreshing(true)
@@ -36,6 +143,7 @@ const HomeScreen: React.FC = () => {
 
   const upcomingMatches = matches.filter((match) => match.status === "upcoming").slice(0, 3) || []
   const liveMatches = matches.filter((match) => match.status === "live") || []
+  const completedMatches = matches.filter((match) => match.status === "completed") || []
 
   // Find user's team if they are a captain
   const userTeam =
@@ -43,6 +151,70 @@ const HomeScreen: React.FC = () => {
 
   const getTeamName = (teamId: string) => {
     return teams.find((team) => team.id === teamId || team._id === teamId)?.name || "Unknown Team"
+  }
+
+  const renderTopScorer = (player: PlayerStats, index: number) => {
+    const rankColors = ['#FFD700', '#C0C0C0', '#CD7F32', '#4A90E2', '#50C878'] // Gold, Silver, Bronze, Blue, Green
+    const rankIcons = ['trophy', 'medal', 'medal', 'ribbon', 'star']
+    
+    return (
+      <TouchableOpacity key={player._id} style={styles.scorerCard}>
+        <View style={styles.scorerRank}>
+          <Ionicons 
+            name={rankIcons[index]} 
+            size={20} 
+            color={rankColors[index]} 
+          />
+          <Text style={[styles.rankNumber, { color: rankColors[index] }]}>
+            #{index + 1}
+          </Text>
+        </View>
+        
+        <View style={styles.scorerInfo}>
+          {player.photo ? (
+            <Image source={{ uri: player.photo }} style={styles.playerPhoto} />
+          ) : (
+            <LinearGradient
+              colors={[COLORS.primary + '40', COLORS.primary + '20']}
+              style={styles.playerPhotoPlaceholder}
+            >
+              <Text style={styles.playerInitials}>
+                {player.playerName.split(' ').map(n => n[0]).join('').substring(0, 2)}
+              </Text>
+            </LinearGradient>
+          )}
+          
+          <View style={styles.scorerDetails}>
+            <Text style={styles.playerName} numberOfLines={1}>
+              {player.playerName}
+            </Text>
+            <Text style={styles.teamNameSmall} numberOfLines={1}>
+              {player.teamName}
+            </Text>
+            <Text style={styles.positionText}>
+              #{player.jerseyNumber} • {player.position}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.scorerStats}>
+          <LinearGradient
+            colors={[COLORS.primary, '#FFB84D']}
+            style={styles.goalsBadge}
+          >
+            <Ionicons name="football" size={12} color={COLORS.black} />
+            <Text style={styles.goalsText}>{player.goals}</Text>
+          </LinearGradient>
+          
+          {player.appearances > 0 && (
+            <View style={styles.appearancesBadge}>
+              <Ionicons name="calendar" size={10} color={COLORS.blue} />
+              <Text style={styles.appearancesText}>{player.appearances}</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    )
   }
 
   return (
@@ -82,10 +254,58 @@ const HomeScreen: React.FC = () => {
             <Text style={styles.statLabel}>Matches</Text>
           </View>
           <View style={styles.statItem}>
+            <Text style={styles.statValue}>{completedMatches.length}</Text>
+            <Text style={styles.statLabel}>Completed</Text>
+          </View>
+          <View style={styles.statItem}>
             <Text style={styles.statValue}>{liveMatches.length}</Text>
             <Text style={styles.statLabel}>Live</Text>
           </View>
         </View>
+      </View>
+
+      {/* Top 5 Scorers Section */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>⚽ Top 5 Scorers</Text>
+          <View style={styles.scorersSummary}>
+            <Text style={styles.summaryText}>
+              {topScorers.reduce((total, player) => total + player.goals, 0)} goals
+            </Text>
+          </View>
+        </View>
+        
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <Ionicons name="football" size={30} color={COLORS.primary} />
+            <Text style={styles.loadingText}>Calculating top scorers...</Text>
+          </View>
+        ) : topScorers.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="trophy-outline" size={60} color={COLORS.gray} />
+            <Text style={styles.emptyText}>No goals scored yet</Text>
+            <Text style={styles.emptySubtext}>
+              Goals will appear here once matches are completed
+            </Text>
+            <Text style={styles.emptySubtext}>
+              {completedMatches.length} of {matches.length} matches played
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.scorersContainer}>
+            {topScorers.map((player, index) => renderTopScorer(player, index))}
+            
+            {/* Show total goals summary */}
+            <View style={styles.scorersSummaryCard}>
+              <Text style={styles.summaryCardText}>
+                Total Goals: {topScorers.reduce((total, player) => total + player.goals, 0)}
+              </Text>
+              <Text style={styles.summaryCardSubtext}>
+                From {completedMatches.length} completed matches
+              </Text>
+            </View>
+          </View>
+        )}
       </View>
 
       {liveMatches.length > 0 && (
@@ -153,8 +373,8 @@ const HomeScreen: React.FC = () => {
             <Text style={styles.infoValue}>{teams.length}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Total Matches:</Text>
-            <Text style={styles.infoValue}>{matches.length}</Text>
+            <Text style={styles.infoLabel}>Completed Matches:</Text>
+            <Text style={styles.infoValue}>{completedMatches.length}/{matches.length}</Text>
           </View>
         </View>
       </View>
@@ -272,6 +492,145 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: COLORS.primary,
     marginBottom: 15,
+  },
+  // Top Scorers Styles
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  scorersSummary: {
+    backgroundColor: COLORS.primary + '20',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  summaryText: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  scorersContainer: {
+    backgroundColor: COLORS.background,
+    borderRadius: 15,
+    padding: 15,
+  },
+  scorerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray + '20',
+  },
+  scorerRank: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: 50,
+  },
+  rankNumber: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginLeft: 5,
+  },
+  scorerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginLeft: 10,
+  },
+  playerPhoto: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  playerPhotoPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  playerInitials: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  scorerDetails: {
+    flex: 1,
+  },
+  playerName: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  teamNameSmall: {
+    color: COLORS.gray,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  positionText: {
+    color: COLORS.primary,
+    fontSize: 10,
+    marginTop: 1,
+  },
+  scorerStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  goalsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    marginRight: 5,
+  },
+  goalsText: {
+    color: COLORS.black,
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginLeft: 3,
+  },
+  appearancesBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.blue + '20',
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+  },
+  appearancesText: {
+    color: COLORS.blue,
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginLeft: 2,
+  },
+  scorersSummaryCard: {
+    marginTop: 15,
+    padding: 10,
+    backgroundColor: COLORS.primary + '10',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  summaryCardText: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  summaryCardSubtext: {
+    color: COLORS.gray,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  loadingContainer: {
+    backgroundColor: COLORS.background,
+    borderRadius: 15,
+    padding: 30,
+    alignItems: 'center',
   },
   emptyState: {
     alignItems: "center",

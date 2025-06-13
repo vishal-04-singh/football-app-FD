@@ -100,8 +100,8 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
 
     // Validate jersey number
     const jerseyNum = Number.parseInt(playerNumber.trim())
-    if (isNaN(jerseyNum) || jerseyNum < 1 || jerseyNum > 99) {
-      Alert.alert("Invalid Input", "Jersey number must be between 1 and 99")
+    if (isNaN(jerseyNum) || jerseyNum < 0 || jerseyNum > 1001) {
+      Alert.alert("Invalid Input", "Jersey number must be between 1 and 1000")
       return
     }
 
@@ -129,7 +129,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
       return
     }
 
-    // Check team capacity (11 players maximum: 7 playing + 3 substitutes)
+    // Check team capacity (11 players maximum: 7 playing + 4 substitutes)
     if (team.players.length >= 11) {
       Alert.alert("Team Full", "Team already has maximum players (11)")
       return
@@ -139,8 +139,8 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
     const substitutesCount = team.players.filter((p) => p.isSubstitute).length
 
     // Check specific squad limits
-    if (mainPlayersCount >= 7 && substitutesCount >= 3) {
-      Alert.alert("Squad Full", "Team already has 7 playing squad members and 3 substitutes")
+    if (mainPlayersCount >= 7 && substitutesCount >= 4) {
+      Alert.alert("Squad Full", "Team already has 7 playing squad members and 4 substitutes")
       return
     }
 
@@ -197,7 +197,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
       } else if (error.message.includes("maximum players")) {
         errorMessage = "Team already has maximum players (11)"
       } else if (error.message.includes("maximum substitutes")) {
-        errorMessage = "Team already has maximum substitutes (3)"
+        errorMessage = "Team already has maximum substitutes (4)"
       } else if (error.message.includes("Invalid")) {
         errorMessage = error.message
       } else if (error.message.includes("Internal server error")) {
@@ -483,7 +483,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                 <Text style={styles.teamStatLabel}>Playing</Text>
               </View>
               <View style={styles.teamStatItem}>
-                <Text style={styles.teamStatValue}>{userTeam.players.filter((p) => p.isSubstitute).length}/3</Text>
+                <Text style={styles.teamStatValue}>{userTeam.players.filter((p) => p.isSubstitute).length}/4</Text>
                 <Text style={styles.teamStatLabel}>Subs</Text>
               </View>
             </View>
@@ -548,7 +548,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
           <View style={styles.captainNote}>
             <Ionicons name="information-circle-outline" size={20} color={COLORS.blue} />
             <Text style={styles.captainNoteText}>
-              As team captain, you can add new players to your team (max 11: 7 playing + 3 substitutes). Only tournament
+              As team captain, you can add new players to your team (max 11: 7 playing + 4 substitutes). Only tournament
               managers can create new teams and edit existing player information.
             </Text>
           </View>
@@ -596,7 +596,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
             <Ionicons name="information-circle-outline" size={20} color={COLORS.blue} />
             <Text style={styles.captainNoteText}>
               Once you are assigned to a team by tournament management, you will be able to add players to your team
-              (max 11: 7 playing + 3 substitutes).
+              (max 11: 7 playing + 4 substitutes).
             </Text>
           </View>
         </View>
@@ -667,7 +667,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
               {/* TEAM SELECTION - Only for management */}
               {user?.role === "management" && (
                 <View style={styles.pickerContainer}>
-                  <Text style={styles.pickerLabel}>Select Team: *</Text>
+                  <Text style={styles.pickerLabel}>Select Team: </Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                     {tournament?.teams.map((team) => {
                       const isTeamFull = team.players.length >= 11
@@ -709,7 +709,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                     <Text style={styles.teamInfoDetails}>
                       Current players: {userTeam.players.length}/11 | Playing:{" "}
                       {userTeam.players.filter((p) => !p.isSubstitute).length}/7 | Subs:{" "}
-                      {userTeam.players.filter((p) => p.isSubstitute).length}/3
+                      {userTeam.players.filter((p) => p.isSubstitute).length}/4
                     </Text>
                   </View>
                 </View>
@@ -725,7 +725,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                 />
               </View>
 
-              <Text style={styles.inputLabel}>Player Name: *</Text>
+              <Text style={styles.inputLabel}>Player Name: </Text>
               <TextInput
                 style={styles.input}
                 placeholder="Enter player name"
@@ -735,19 +735,19 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
               />
 
               <View style={styles.positionSection}>
-                <Text style={styles.inputLabel}>Position: *</Text>
+                <Text style={styles.inputLabel}>Position: </Text>
                 <PositionPicker selectedPosition={playerPosition} onPositionSelect={setPlayerPosition} />
               </View>
 
-              <Text style={styles.inputLabel}>Jersey Number: *</Text>
+              <Text style={styles.inputLabel}>Jersey Number: </Text>
               <TextInput
                 style={styles.input}
-                placeholder="Enter jersey number (1-99)"
+                placeholder="Enter jersey number (0-1000)"
                 placeholderTextColor={COLORS.gray}
                 value={playerNumber}
                 onChangeText={setPlayerNumber}
                 keyboardType="numeric"
-                maxLength={2}
+                maxLength={4}
               />
 
               <View style={styles.modalButtons}>
