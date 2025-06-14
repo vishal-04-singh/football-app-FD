@@ -1,19 +1,57 @@
 import type React from "react";
 import { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity } from "react-native";
+import { View, Text, StyleSheet, Image, TouchableOpacity } from "react-native";
 import { useTournament } from "../contexts/TournamentContext";
+import { useAuth } from "../contexts/AuthContext";
 import { COLORS } from "../constants/colors";
 import { Ionicons } from "@expo/vector-icons";
+import { RefreshableScrollView } from "../../components/RefreshableScrollView";
+import { useScrollRefresh } from "../../hooks/useScrollRefresh";
 
-// Current Date and Time (UTC): 2025-06-07 19:56:08
-// Current User's Login: vishal-04-singhall
-const CURRENT_TIMESTAMP = "2025-06-07 19:56:08";
-const CURRENT_USERNAME = "vishal-04-singhall";
+// Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-06-14 07:57:19
+// Current User's Login: vishal-04-singh
 
 const PointsTableScreen: React.FC = () => {
+  const { user } = useAuth();
   const { tournament, matches, refreshData } = useTournament();
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [calculatedTeams, setCalculatedTeams] = useState([]);
+
+  // Get current date and time
+  const getCurrentDateTime = () => {
+    const now = new Date()
+    return {
+      date: now.toISOString().split('T')[0], // YYYY-MM-DD format
+      time: now.toTimeString().split(' ')[0], // HH:MM:SS format
+      fullDateTime: now.toISOString().slice(0, 19).replace('T', ' '), // YYYY-MM-DD HH:MM:SS
+      userFriendlyDate: now.toLocaleDateString("en-US", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      }),
+      userFriendlyTime: now.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      })
+    }
+  }
+
+  const currentDateTime = getCurrentDateTime()
+
+  // Custom refresh hook
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: async () => {
+      // Refresh tournament data
+      if (refreshData) {
+        await refreshData();
+      }
+    },
+    successMessage: "Points table updated successfully!",
+    errorMessage: "Failed to refresh points table. Please try again.",
+    showSuccessAlert: false, // Don't show success alert for points table refresh
+    showErrorAlert: true
+  });
 
   // Calculate team statistics including points from match results
   useEffect(() => {
@@ -91,46 +129,34 @@ const PointsTableScreen: React.FC = () => {
     setCalculatedTeams(sortedTeams);
   }, [tournament?.teams, matches]);
 
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await refreshData();
-    } catch (error) {
-      console.error("Failed to refresh data:", error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Points Table</Text>
-        <Text style={styles.subtitle}>League Standings</Text>
-      </View>
+    <RefreshableScrollView 
+      style={styles.container}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
+      {/* Current Date/Time and User Info Bar */}
       
-      {/* User info and timestamp display */}
-      <View style={styles.userInfoBar}>
-        <Text style={styles.userInfo}>@{CURRENT_USERNAME}</Text>
-        <Text style={styles.timeInfo}>{CURRENT_TIMESTAMP}</Text>
-      </View>
 
-      {/* Refresh button */}
-      <TouchableOpacity 
-        style={styles.refreshButton} 
-        onPress={handleRefresh}
-        disabled={isRefreshing}
-      >
-        <Ionicons 
-          name="refresh" 
-          size={16} 
-          color={COLORS.white}
-          style={{ marginRight: 5 }}
-        />
-        <Text style={styles.refreshButtonText}>
-          {isRefreshing ? "Refreshing..." : "Refresh Table"}
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.header}>
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>Points Table</Text>
+          <Text style={styles.subtitle}>League Standings</Text>
+        </View>
+        
+        {/* Manual refresh button */}
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={onRefresh}
+          disabled={refreshing}
+        >
+          <Ionicons 
+            name={refreshing ? "sync" : "refresh"} 
+            size={20} 
+            color={COLORS.primary} 
+          />
+        </TouchableOpacity>
+      </View>
 
       {calculatedTeams.length === 0 ? (
         <View style={styles.emptyState}>
@@ -139,6 +165,22 @@ const PointsTableScreen: React.FC = () => {
           <Text style={styles.emptySubtext}>
             Teams will appear here once they are added to the tournament
           </Text>
+          
+          {/* Add refresh button in empty state */}
+          <TouchableOpacity
+            style={styles.emptyRefreshButton}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <Ionicons 
+              name={refreshing ? "sync" : "refresh"} 
+              size={20} 
+              color={COLORS.primary} 
+            />
+            <Text style={styles.emptyRefreshText}>
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <View style={styles.tableContainer}>
@@ -298,10 +340,10 @@ const PointsTableScreen: React.FC = () => {
       {/* Last updated */}
       <View style={styles.lastUpdated}>
         <Text style={styles.lastUpdatedText}>
-          Last updated: {CURRENT_TIMESTAMP}
+          Last updated: {currentDateTime.fullDateTime}
         </Text>
       </View>
-    </ScrollView>
+    </RefreshableScrollView>
   );
 };
 
@@ -310,12 +352,68 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.black,
   },
+  // Status Bar Styles
+  statusBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  dateTimeContainer: {
+    flex: 1,
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  currentDate: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  currentTime: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  userInfoContainer: {
+    alignItems: 'flex-end',
+  },
+  userBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  userLogin: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
   header: {
     paddingTop: 10,
     paddingBottom: 10,
     paddingLeft: 20,
     paddingRight: 20,
     backgroundColor: COLORS.background,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerContent: {
+    flex: 1,
   },
   title: {
     fontSize: 24,
@@ -327,36 +425,10 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     marginTop: 5,
   },
-  userInfoBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(255,255,255,0.05)",
-    padding: 10,
-    marginTop: 1,
-  },
-  userInfo: {
-    color: COLORS.primary,
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  timeInfo: {
-    color: COLORS.gray,
-    fontSize: 12,
-  },
   refreshButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.blue,
-    marginHorizontal: 20,
-    marginTop: 10,
-    padding: 10,
-    borderRadius: 8,
-  },
-  refreshButtonText: {
-    color: COLORS.white,
-    fontWeight: "bold",
-    fontSize: 14,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 15,
   },
   emptyState: {
     alignItems: "center",
@@ -373,8 +445,25 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     fontSize: 16,
     marginTop: 10,
+    marginBottom: 20,
     textAlign: "center",
     lineHeight: 24,
+  },
+  emptyRefreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  emptyRefreshText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+    marginLeft: 8,
   },
   tableContainer: {
     margin: 10,

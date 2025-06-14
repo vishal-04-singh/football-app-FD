@@ -29,8 +29,10 @@
     "web": {
       "favicon": "./assets/ASL_logo.png"
     },
+    
     "plugins": [
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ]
   }
 }

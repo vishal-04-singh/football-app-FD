@@ -5,13 +5,11 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Alert,
   Image,
   Modal,
   FlatList,
-  RefreshControl,
 } from "react-native";
 import { useAuth } from "../contexts/AuthContext";
 import { useTournament } from "../contexts/TournamentContext";
@@ -21,6 +19,8 @@ import type { MatchEvent } from "../types";
 import { useMatchStats } from "../../hooks/useMatchStats";
 import MatchStatsPanel from "../../components/MatchStatsPanel";
 import LiveMatchTimer from "../../components/LiveMatchTimer";
+import { RefreshableScrollView } from "../../components/RefreshableScrollView";
+import { useScrollRefresh } from "../../hooks/useScrollRefresh";
 
 // Current time from user: 2025-06-12 11:15:39
 const CURRENT_TIME = new Date("2025-06-12T11:15:39Z");
@@ -36,6 +36,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
     updateMatch,
     updateMatchStatus,
     updateMatchStats,
+    refreshData, // Assuming this method exists in your tournament context
   } = useTournament();
 
   // Match selection and data
@@ -63,10 +64,24 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
   const [showStatsView, setShowStatsView] = useState(false);
   const [eventType, setEventType] = useState("");
   const [selectedTeam, setSelectedTeam] = useState("");
-  const [refreshing, setRefreshing] = useState(false);
 
   // User info - Updated to use current user
   const [username, setUsername] = useState("vishal-04-singh");
+
+  // Custom refresh hook
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: async () => {
+      // Refresh tournament data
+      if (refreshData) {
+        await refreshData();
+      }
+      // You can add more refresh logic here if needed
+    },
+    successMessage: "Match data refreshed successfully!",
+    errorMessage: "Failed to refresh match data. Please try again.",
+    showSuccessAlert: false, // Don't show success alert for live match refresh
+    showErrorAlert: true
+  });
 
   // Get live matches
   const liveMatches = matches?.filter((match) => match.status === "live") || [];
@@ -302,9 +317,6 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
         { cancelable: false } // User must acknowledge
       );
     }
-
-    // Show warning when approaching the 72-minute limit
-    
   };
 
   // Toggle half-time
@@ -740,21 +752,6 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
     return success;
   };
 
-  // Handle refresh
-  const onRefresh = async () => {
-    setRefreshing(true);
-    try {
-      // Refresh tournament data
-      if (tournament) {
-        // Add refresh logic here
-      }
-    } catch (error) {
-      console.error("Error refreshing data:", error);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   // Get team info
   const getTeamInfo = (teamId: string) => {
     const team = teams?.find(
@@ -918,11 +915,10 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
   // No live matches
   if (!currentMatch) {
     return (
-      <ScrollView
+      <RefreshableScrollView
         style={styles.container}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshing={refreshing}
+        onRefresh={onRefresh}
       >
         <View style={styles.userInfo}>
           <Text style={styles.username}>@{username}</Text>
@@ -959,7 +955,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
             </TouchableOpacity>
           )}
         </View>
-      </ScrollView>
+      </RefreshableScrollView>
     );
   }
 
@@ -979,11 +975,10 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
     : getTeamInfo(currentMatch.awayTeamId);
 
   return (
-    <ScrollView
+    <RefreshableScrollView
       style={styles.container}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     >
       <View style={styles.userInfo}>
         <Text style={styles.username}>@{username}</Text>
@@ -1554,7 +1549,7 @@ const EnhancedLiveMatchScreen: React.FC<{ navigation?: any }> = ({
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </RefreshableScrollView>
   );
 };
 

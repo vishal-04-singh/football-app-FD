@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, RefreshControl, Alert, Image } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Image } from "react-native"
 import { useAuth } from "../contexts/AuthContext"
 import { useTournament } from "../contexts/TournamentContext"
 import { COLORS } from "../constants/colors"
@@ -9,6 +9,9 @@ import { Ionicons } from "@expo/vector-icons"
 import { useState, useEffect, useMemo } from "react"
 import { debugTeamAssignment } from "../../utils/debugUtils"
 import { LinearGradient } from "expo-linear-gradient"
+import { RefreshableScrollView } from "../../components/RefreshableScrollView"
+import { RefreshButton } from "../../components/RefreshButton"
+import { useScrollRefresh } from "../../hooks/useScrollRefresh"
 
 interface PlayerStats {
   _id: string
@@ -29,7 +32,13 @@ interface PlayerStats {
 const HomeScreen: React.FC = () => {
   const { user } = useAuth()
   const { tournament, teams, matches, loading, refreshData } = useTournament()
-  const [refreshing, setRefreshing] = useState(false)
+
+  // Use the custom hook for scroll refresh
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: refreshData,
+    successMessage: "Data refreshed successfully!",
+    errorMessage: "Failed to refresh data. Please try again."
+  })
 
   // Debug team assignment on component mount
   useEffect(() => {
@@ -128,19 +137,6 @@ const HomeScreen: React.FC = () => {
     return allPlayerStats.slice(0, 5) // Return top 5
   }, [teams, matches])
 
-  const onRefresh = async () => {
-    setRefreshing(true)
-    try {
-      await refreshData()
-      Alert.alert("Success", "Data refreshed successfully!")
-    } catch (error) {
-      console.error("Error refreshing data:", error)
-      Alert.alert("Error", "Failed to refresh data. Please try again.")
-    } finally {
-      setRefreshing(false)
-    }
-  }
-
   const upcomingMatches = matches.filter((match) => match.status === "upcoming").slice(0, 3) || []
   const liveMatches = matches.filter((match) => match.status === "live") || []
   const completedMatches = matches.filter((match) => match.status === "completed") || []
@@ -218,16 +214,10 @@ const HomeScreen: React.FC = () => {
   }
 
   return (
-    <ScrollView
+    <RefreshableScrollView
       style={styles.container}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={[COLORS.primary]}
-          tintColor={COLORS.primary}
-        />
-      }
+      refreshing={refreshing}
+      onRefresh={onRefresh}
     >
       <View style={styles.header}>
         <Text style={styles.welcomeText}>Welcome back,</Text>
@@ -235,11 +225,12 @@ const HomeScreen: React.FC = () => {
         <Text style={styles.roleText}>{user?.role.toUpperCase()}</Text>
         {userTeam && <Text style={styles.teamText}>Team: {userTeam.name}</Text>}
 
-        {/* Add refresh button */}
-        <TouchableOpacity style={styles.refreshButton} onPress={onRefresh} disabled={refreshing || loading}>
-          <Ionicons name="refresh" size={20} color={COLORS.white} />
-          <Text style={styles.refreshText}>Refresh Data</Text>
-        </TouchableOpacity>
+        {/* Refresh button using the new component */}
+        <RefreshButton
+          onPress={onRefresh}
+          loading={refreshing || loading}
+          style={styles.refreshButtonMargin}
+        />
       </View>
 
       <View style={styles.statsOverview}>
@@ -402,7 +393,7 @@ const HomeScreen: React.FC = () => {
           <Text style={styles.loadingText}>Syncing data...</Text>
         </View>
       )}
-    </ScrollView>
+    </RefreshableScrollView>
   )
 }
 
@@ -437,21 +428,8 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     marginTop: 5,
   },
-  refreshButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: COLORS.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
+  refreshButtonMargin: {
     marginTop: 15,
-    alignSelf: "flex-start",
-  },
-  refreshText: {
-    color: COLORS.black,
-    fontSize: 14,
-    fontWeight: "bold",
-    marginLeft: 5,
   },
   statsOverview: {
     backgroundColor: COLORS.background,

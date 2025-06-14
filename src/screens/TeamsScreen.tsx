@@ -6,7 +6,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   FlatList,
   Image,
@@ -20,6 +19,11 @@ import type { Team, Player, Match } from "../types"
 import { Ionicons } from "@expo/vector-icons"
 import { useAuth } from "../contexts/AuthContext"
 import apiService from "../../services/api"
+import { RefreshableScrollView } from "../../components/RefreshableScrollView"
+import { useScrollRefresh } from "../../hooks/useScrollRefresh"
+
+// Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-06-14 07:53:27
+// Current User's Login: vishal-04-singh
 
 interface PlayerStats {
   goals: number
@@ -42,6 +46,49 @@ const TeamsScreen: React.FC = () => {
   const [editPlayerNumber, setEditPlayerNumber] = useState("")
   const [loading, setLoading] = useState(false)
   const [playerStats, setPlayerStats] = useState<Record<string, PlayerStats>>({})
+
+  // Get current date and time
+  const getCurrentDateTime = () => {
+    const now = new Date()
+    return {
+      date: now.toISOString().split('T')[0], // YYYY-MM-DD format
+      time: now.toTimeString().split(' ')[0], // HH:MM:SS format
+      fullDateTime: now.toISOString().slice(0, 19).replace('T', ' '), // YYYY-MM-DD HH:MM:SS
+      userFriendlyDate: now.toLocaleDateString("en-US", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      }),
+      userFriendlyTime: now.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      })
+    }
+  }
+
+  const currentDateTime = getCurrentDateTime()
+
+  // Custom refresh hook
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: async () => {
+      // Refresh tournament data
+      if (refreshData) {
+        await refreshData();
+      }
+      
+      // Recalculate player statistics after refresh
+      if (matches.length > 0 && teams.length > 0) {
+        const stats = calculatePlayerStats();
+        setPlayerStats(stats);
+      }
+    },
+    successMessage: "Teams data updated successfully!",
+    errorMessage: "Failed to refresh teams data. Please try again.",
+    showSuccessAlert: false, // Don't show success alert for teams refresh
+    showErrorAlert: true
+  });
 
   // Calculate team statistics from matches
   const calculateTeamStats = (teamId: string) => {
@@ -427,7 +474,14 @@ const TeamsScreen: React.FC = () => {
     const teamStats = calculateTeamStats(selectedTeam.id);
 
     return (
-      <View style={styles.container}>
+      <RefreshableScrollView 
+        style={styles.container}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
+        {/* Current Date/Time and User Info Bar */}
+        
+
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
@@ -439,107 +493,118 @@ const TeamsScreen: React.FC = () => {
             <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
           </TouchableOpacity>
           <Text style={styles.title}>{selectedTeam.name}</Text>
-          {user?.role === "management" && (
-            <TouchableOpacity style={styles.editToggleButton} onPress={() => setEditMode(!editMode)}>
-              <Ionicons
-                name={editMode ? "checkmark-outline" : "create-outline"}
-                size={24}
-                color={editMode ? COLORS.green : COLORS.primary}
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.refreshButton}
+              onPress={onRefresh}
+              disabled={refreshing}
+            >
+              <Ionicons 
+                name={refreshing ? "sync" : "refresh"} 
+                size={20} 
+                color={COLORS.primary} 
               />
             </TouchableOpacity>
-          )}
+            {user?.role === "management" && (
+              <TouchableOpacity style={styles.editToggleButton} onPress={() => setEditMode(!editMode)}>
+                <Ionicons
+                  name={editMode ? "checkmark-outline" : "create-outline"}
+                  size={24}
+                  color={editMode ? COLORS.green : COLORS.primary}
+                />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
-        <ScrollView style={styles.teamDetails}>
-          <View style={styles.teamOverview}>
-            <View style={styles.largeLogo}>
-              {selectedTeam.logo ? (
-                <Image source={{ uri: selectedTeam.logo }} style={styles.largeLogoImage} />
-              ) : (
-                <Text style={styles.largeLogoText}>
-                  {selectedTeam.name
-                    .split(" ")
-                    .map((word) => word[0])
-                    .join("")
-                    .toUpperCase()}
-                </Text>
-              )}
-            </View>
-            <Text style={styles.teamFullName}>{selectedTeam.name}</Text>
-
-            <View style={styles.overviewStats}>
-              <View style={styles.overviewStatItem}>
-                <Text style={styles.overviewStatValue}>{teamStats.points}</Text>
-                <Text style={styles.overviewStatLabel}>Points</Text>
-              </View>
-              <View style={styles.overviewStatItem}>
-                <Text style={styles.overviewStatValue}>{teamStats.goalsFor}</Text>
-                <Text style={styles.overviewStatLabel}>Goals For</Text>
-              </View>
-              <View style={styles.overviewStatItem}>
-                <Text style={styles.overviewStatValue}>{teamStats.goalsAgainst}</Text>
-                <Text style={styles.overviewStatLabel}>Goals Against</Text>
-              </View>
-            </View>
-            
-            {/* Extended team statistics */}
-            <View style={styles.teamStatsDetail}>
-              <View style={styles.teamStatRow}>
-                <Text style={styles.teamStatLabel}>Matches Played:</Text>
-                <Text style={styles.teamStatValue}>{teamStats.played}</Text>
-              </View>
-              <View style={styles.teamStatRow}>
-                <Text style={styles.teamStatLabel}>Won:</Text>
-                <Text style={styles.teamStatValue}>{teamStats.wins}</Text>
-              </View>
-              <View style={styles.teamStatRow}>
-                <Text style={styles.teamStatLabel}>Drawn:</Text>
-                <Text style={styles.teamStatValue}>{teamStats.draws}</Text>
-              </View>
-              <View style={styles.teamStatRow}>
-                <Text style={styles.teamStatLabel}>Lost:</Text>
-                <Text style={styles.teamStatValue}>{teamStats.losses}</Text>
-              </View>
-              <View style={styles.teamStatRow}>
-                <Text style={styles.teamStatLabel}>Goal Difference:</Text>
-                <Text style={styles.teamStatValue}>{teamStats.goalsFor - teamStats.goalsAgainst}</Text>
-              </View>
-            </View>
+        <View style={styles.teamOverview}>
+          <View style={styles.largeLogo}>
+            {selectedTeam.logo ? (
+              <Image source={{ uri: selectedTeam.logo }} style={styles.largeLogoImage} />
+            ) : (
+              <Text style={styles.largeLogoText}>
+                {selectedTeam.name
+                  .split(" ")
+                  .map((word) => word[0])
+                  .join("")
+                  .toUpperCase()}
+              </Text>
+            )}
           </View>
+          <Text style={styles.teamFullName}>{selectedTeam.name}</Text>
 
-          <View style={styles.playersSection}>
-            <Text style={styles.sectionTitle}>All Players ({selectedTeam.players.length})</Text>
-            <FlatList
-              data={selectedTeam.players}
-              renderItem={renderPlayerCard}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-            />
+          <View style={styles.overviewStats}>
+            <View style={styles.overviewStatItem}>
+              <Text style={styles.overviewStatValue}>{teamStats.points}</Text>
+              <Text style={styles.overviewStatLabel}>Points</Text>
+            </View>
+            <View style={styles.overviewStatItem}>
+              <Text style={styles.overviewStatValue}>{teamStats.goalsFor}</Text>
+              <Text style={styles.overviewStatLabel}>Goals For</Text>
+            </View>
+            <View style={styles.overviewStatItem}>
+              <Text style={styles.overviewStatValue}>{teamStats.goalsAgainst}</Text>
+              <Text style={styles.overviewStatLabel}>Goals Against</Text>
+            </View>
           </View>
           
-          {/* Legend for player statistics */}
-          <View style={styles.legendSection}>
-            <Text style={styles.legendTitle}>Statistics Legend</Text>
-            <View style={styles.legendRow}>
-              <View style={styles.legendItem}>
-                <Ionicons name="football-outline" size={14} color={COLORS.primary} />
-                <Text style={styles.legendText}>Goals</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <Ionicons name="trophy-outline" size={14} color={COLORS.primary} />
-                <Text style={styles.legendText}>Assists</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.cardIndicator, styles.yellowCardIndicator]} />
-                <Text style={styles.legendText}>Yellow Cards</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.cardIndicator, styles.redCardIndicator]} />
-                <Text style={styles.legendText}>Red Cards</Text>
-              </View>
+          {/* Extended team statistics */}
+          <View style={styles.teamStatsDetail}>
+            <View style={styles.teamStatRow}>
+              <Text style={styles.teamStatLabel}>Matches Played:</Text>
+              <Text style={styles.teamStatValue}>{teamStats.played}</Text>
+            </View>
+            <View style={styles.teamStatRow}>
+              <Text style={styles.teamStatLabel}>Won:</Text>
+              <Text style={styles.teamStatValue}>{teamStats.wins}</Text>
+            </View>
+            <View style={styles.teamStatRow}>
+              <Text style={styles.teamStatLabel}>Drawn:</Text>
+              <Text style={styles.teamStatValue}>{teamStats.draws}</Text>
+            </View>
+            <View style={styles.teamStatRow}>
+              <Text style={styles.teamStatLabel}>Lost:</Text>
+              <Text style={styles.teamStatValue}>{teamStats.losses}</Text>
+            </View>
+            <View style={styles.teamStatRow}>
+              <Text style={styles.teamStatLabel}>Goal Difference:</Text>
+              <Text style={styles.teamStatValue}>{teamStats.goalsFor - teamStats.goalsAgainst}</Text>
             </View>
           </View>
-        </ScrollView>
+        </View>
+
+        <View style={styles.playersSection}>
+          <Text style={styles.sectionTitle}>All Players ({selectedTeam.players.length})</Text>
+          <FlatList
+            data={selectedTeam.players}
+            renderItem={renderPlayerCard}
+            keyExtractor={(item) => item.id}
+            scrollEnabled={false}
+          />
+        </View>
+        
+        {/* Legend for player statistics */}
+        <View style={styles.legendSection}>
+          <Text style={styles.legendTitle}>Statistics Legend</Text>
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <Ionicons name="football-outline" size={14} color={COLORS.primary} />
+              <Text style={styles.legendText}>Goals</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <Ionicons name="trophy-outline" size={14} color={COLORS.primary} />
+              <Text style={styles.legendText}>Assists</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.cardIndicator, styles.yellowCardIndicator]} />
+              <Text style={styles.legendText}>Yellow Cards</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.cardIndicator, styles.redCardIndicator]} />
+              <Text style={styles.legendText}>Red Cards</Text>
+            </View>
+          </View>
+        </View>
 
         {/* Edit Player Modal */}
         <Modal visible={showEditModal} transparent animationType="slide" onRequestClose={() => setShowEditModal(false)}>
@@ -612,16 +677,52 @@ const TeamsScreen: React.FC = () => {
             </View>
           </View>
         </Modal>
-      </View>
+      </RefreshableScrollView>
     )
   }
 
   return (
-    <View style={styles.container}>
+    <RefreshableScrollView 
+      style={styles.container}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
+      {/* Current Date/Time and User Info Bar */}
+      <View style={styles.statusBar}>
+        <View style={styles.dateTimeContainer}>
+          <View style={styles.dateTimeRow}>
+            <Ionicons name="calendar-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.currentDate}>{currentDateTime.userFriendlyDate}</Text>
+          </View>
+          <View style={styles.dateTimeRow}>
+            <Ionicons name="time-outline" size={14} color={COLORS.primary} />
+            <Text style={styles.currentTime}>{currentDateTime.userFriendlyTime}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.userInfoContainer}>
+          <View style={styles.userBadge}>
+            <Ionicons name="person-circle-outline" size={16} color={COLORS.primary} />
+            <Text style={styles.userLogin}>@{user?.name || 'vishal-04-singh'}</Text>
+          </View>
+        </View>
+      </View>
+
       <View style={styles.header}>
         <Text style={styles.title}>Teams</Text>
         <View style={styles.headerRight}>
           <Text style={styles.subtitle}>{tournament?.teams.length || 0}/8 teams competing</Text>
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <Ionicons 
+              name={refreshing ? "sync" : "refresh"} 
+              size={20} 
+              color={COLORS.primary} 
+            />
+          </TouchableOpacity>
           {user?.role === "management" && (
             <TouchableOpacity style={styles.editTeamsButton} onPress={() => setTeamEditMode(!teamEditMode)}>
               <Ionicons
@@ -646,20 +747,37 @@ const TeamsScreen: React.FC = () => {
         </View>
       )}
 
-      <FlatList
-        data={tournament?.teams || []}
-        renderItem={renderTeamCard}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.teamsList}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="people-outline" size={60} color={COLORS.gray} />
-            <Text style={styles.emptyText}>No teams available</Text>
-          </View>
-        }
-      />
-    </View>
+      <View style={styles.teamsListContainer}>
+        <FlatList
+          data={tournament?.teams || []}
+          renderItem={renderTeamCard}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.teamsList}
+          showsVerticalScrollIndicator={false}
+          scrollEnabled={false}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="people-outline" size={60} color={COLORS.gray} />
+              <Text style={styles.emptyText}>No teams available</Text>
+              <TouchableOpacity
+                style={styles.emptyRefreshButton}
+                onPress={onRefresh}
+                disabled={refreshing}
+              >
+                <Ionicons 
+                  name={refreshing ? "sync" : "refresh"} 
+                  size={20} 
+                  color={COLORS.primary} 
+                />
+                <Text style={styles.emptyRefreshText}>
+                  {refreshing ? "Refreshing..." : "Refresh"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          }
+        />
+      </View>
+    </RefreshableScrollView>
   )
 }
 
@@ -667,6 +785,56 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.black,
+  },
+  // Status Bar Styles
+  statusBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  dateTimeContainer: {
+    flex: 1,
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  currentDate: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  currentTime: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  userInfoContainer: {
+    alignItems: 'flex-end',
+  },
+  userBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  userLogin: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 4,
   },
   header: {
     padding: 20,
@@ -676,6 +844,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  headerActions: {
     flexDirection: "row",
     alignItems: "center",
   },
@@ -694,6 +866,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.gray,
     marginRight: 15,
+  },
+  refreshButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 15,
+    marginRight: 10,
   },
   editTeamsButton: {
     padding: 8,
@@ -721,6 +899,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "bold",
   },
+  teamsListContainer: {
+    flex: 1,
+  },
   teamsList: {
     padding: 20,
   },
@@ -733,7 +914,24 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     fontSize: 18,
     marginTop: 20,
+    marginBottom: 20,
     textAlign: "center",
+  },
+  emptyRefreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  emptyRefreshText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+    marginLeft: 8,
   },
   teamCard: {
     backgroundColor: COLORS.background,
@@ -798,9 +996,6 @@ const styles = StyleSheet.create({
     color: COLORS.gray,
     fontSize: 12,
     marginTop: 2,
-  },
-  teamDetails: {
-    flex: 1,
   },
   teamOverview: {
     alignItems: "center",

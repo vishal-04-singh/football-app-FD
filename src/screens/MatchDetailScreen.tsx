@@ -6,7 +6,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Image,
   TouchableOpacity,
   SafeAreaView,
@@ -22,6 +21,8 @@ import { LinearGradient } from "expo-linear-gradient";
 // Import the reusable components
 import MatchEventsTimeline from "../../components/MatchEventsTimeline";
 import MatchStatistics from "../../components/MatchStatistics";
+import { RefreshableScrollView } from "../../components/RefreshableScrollView";
+import { useScrollRefresh } from "../../hooks/useScrollRefresh";
 
 interface PlayerSquad {
   id: string;
@@ -44,7 +45,7 @@ interface MatchSquads {
 }
 
 const MatchDetailScreen: React.FC = () => {
-  const { tournament } = useTournament();
+  const { tournament, refreshData } = useTournament();
   const navigation = useNavigation();
   const route = useRoute();
   // @ts-ignore - ignore type issues with route params
@@ -56,54 +57,86 @@ const MatchDetailScreen: React.FC = () => {
   const [matchSquads, setMatchSquads] = useState<MatchSquads | null>(null);
   const [loadingSquads, setLoadingSquads] = useState(false);
 
+  // Custom refresh hook
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: async () => {
+      // Refresh tournament data
+      if (refreshData) {
+        await refreshData();
+      }
+      
+      // Refresh match squads if they're loaded
+      if (match && matchSquads) {
+        await fetchMatchSquads(match);
+      }
+    },
+    successMessage: "Match details refreshed successfully!",
+    errorMessage: "Failed to refresh match details. Please try again.",
+    showSuccessAlert: false, // Don't show success alert for match detail refresh
+    showErrorAlert: true
+  });
+
+  // In your MatchDetailScreen.tsx, in the useEffect where you process events:
   useEffect(() => {
     if (tournament?.matches && matchId) {
-      const foundMatch = tournament.matches.find(
-        (m) =>
-          m.id === matchId ||
-          m._id === matchId ||
-          String(m.id) === String(matchId)
-      );
-
+      const foundMatch = tournament.matches.find(m => 
+        m.id === matchId || m._id === matchId || String(m.id) === String(matchId)
+      )
+      
       if (foundMatch) {
-        setMatch(foundMatch);
-
-        // Sort events by minute
+        setMatch(foundMatch)
+        
+        // IMPORTANT: Process events the SAME WAY as your live screen
         if (foundMatch.events && foundMatch.events.length > 0) {
-          // Clone events array and add teamId if not present
-          const eventsWithTeamIds = foundMatch.events.map((event) => {
-            // If event doesn't have teamId, attempt to infer it
-            if (!event.teamId && !event.team) {
-              // Try to determine team from player data or other logic
-              // For now, we'll use a placeholder - you may need to implement proper logic
-              const isHomeTeamPlayer = true; // Replace with actual logic based on your data
-              return {
-                ...event,
-                teamId: isHomeTeamPlayer
-                  ? foundMatch.homeTeamId
-                  : foundMatch.awayTeamId,
-                team: isHomeTeamPlayer
-                  ? foundMatch.homeTeamId
-                  : foundMatch.awayTeamId,
-              };
+          const eventsWithTeamIds = foundMatch.events.map(event => {
+            // ENHANCED team detection - try multiple approaches
+            let eventTeamId = event.team || event.teamId;
+            
+            if (!eventTeamId) {
+              // Try to determine from player data
+              if (event.playerId && tournament?.teams) {
+                const playerTeam = tournament.teams.find(team => 
+                  team.players?.some(player => 
+                    String(player.id) === String(event.playerId) || 
+                    String(player._id) === String(event.playerId)
+                  )
+                );
+                
+                if (playerTeam) {
+                  eventTeamId = playerTeam.id || playerTeam._id;
+                }
+              }
+              
+              // Fallback: try to guess from match structure
+              if (!eventTeamId) {
+                // This is a simplified assumption - you may need more logic here
+                eventTeamId = foundMatch.homeTeamId; // Default to home team
+              }
             }
-            // Ensure both team and teamId are present for compatibility
+            
             return {
               ...event,
-              team: event.team || event.teamId,
-              teamId: event.teamId || event.team,
+              team: eventTeamId,
+              teamId: eventTeamId,
+              // Ensure we have required fields
+              id: event.id || `event-${Date.now()}-${Math.random()}`,
+              playerName: event.playerName || 'Unknown Player',
+              minute: event.minute || 0,
+              type: event.type || 'goal'
             };
           });
-
+          
           // Sort events by minute
-          const events = [...eventsWithTeamIds].sort(
-            (a, b) => a.minute - b.minute
-          );
+          const events = [...eventsWithTeamIds].sort((a, b) => a.minute - b.minute);
           setSortedEvents(events);
+          
+          console.log('MatchDetailScreen - Processed events:', events);
         }
-
-        // Fetch match squads
-        fetchMatchSquads(foundMatch);
+        
+        // Auto-fetch squads when match loads
+        if (foundMatch.status === "completed") {
+          fetchMatchSquads(foundMatch);
+        }
       }
     }
   }, [tournament, matchId]);
@@ -282,6 +315,12 @@ const MatchDetailScreen: React.FC = () => {
         <View style={styles.emptyContainer}>
           <Ionicons name="people-outline" size={60} color={COLORS.gray} />
           <Text style={styles.emptyText}>No squad data available</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => match && fetchMatchSquads(match)}
+          >
+            <Text style={styles.retryButtonText}>Retry Loading Squads</Text>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -290,7 +329,11 @@ const MatchDetailScreen: React.FC = () => {
     const awayTeam = getTeamInfo(match!.awayTeamId);
 
     return (
-      <ScrollView style={styles.squadsContainer}>
+      <RefreshableScrollView 
+        style={styles.squadsContainer}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         {/* Home Team Squad */}
         <View style={styles.teamSquadSection}>
           <View style={styles.teamSquadHeader}>
@@ -346,13 +389,14 @@ const MatchDetailScreen: React.FC = () => {
             </View>
           )}
         </View>
-      </ScrollView>
+      </RefreshableScrollView>
     );
   };
 
   if (!match) {
     return (
       <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading match details...</Text>
       </View>
     );
@@ -373,10 +417,24 @@ const MatchDetailScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Match Details</Text>
-        <View style={styles.placeholder} />
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={onRefresh}
+          disabled={refreshing}
+        >
+          <Ionicons 
+            name={refreshing ? "sync" : "refresh"} 
+            size={20} 
+            color={COLORS.primary} 
+          />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.container}>
+      <RefreshableScrollView 
+        style={styles.container}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         {/* Match Score Card */}
         <View style={styles.scoreCard}>
           <View style={styles.matchDate}>
@@ -464,7 +522,13 @@ const MatchDetailScreen: React.FC = () => {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tab, activeTab === "squads" && styles.activeTab]}
-            onPress={() => setActiveTab("squads")}
+            onPress={() => {
+              setActiveTab("squads");
+              // Load squads when tab is selected if not already loaded
+              if (!matchSquads && !loadingSquads) {
+                fetchMatchSquads(match);
+              }
+            }}
           >
             <Text
               style={[
@@ -501,7 +565,7 @@ const MatchDetailScreen: React.FC = () => {
         )}
 
         {activeTab === "squads" && renderSquadsTab()}
-      </ScrollView>
+      </RefreshableScrollView>
     </SafeAreaView>
   );
 };
@@ -529,6 +593,9 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontSize: 18,
     fontWeight: "bold",
+  },
+  refreshButton: {
+    padding: 8,
   },
   placeholder: {
     width: 40,
@@ -796,6 +863,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 16,
     textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 15,
+  },
+  retryButtonText: {
+    color: COLORS.black,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });
 

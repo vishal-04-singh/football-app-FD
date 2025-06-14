@@ -2,17 +2,19 @@
 
 import type React from "react"
 import { useState } from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Modal } from "react-native"
 import { useAuth } from "../contexts/AuthContext"
 import { useTournament } from "../contexts/TournamentContext"
 import { COLORS } from "../constants/colors"
 import { Ionicons } from "@expo/vector-icons"
 import CustomImagePicker from "../../components/ImagePicker"
 import PositionPicker from "../../components/PositionPicker"
+import { RefreshableScrollView } from "../../components/RefreshableScrollView"
+import { useScrollRefresh } from "../../hooks/useScrollRefresh"
 
 const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const { user, logout } = useAuth()
-  const { tournament, addTeam, addPlayer } = useTournament()
+  const { tournament, addTeam, addPlayer, refreshData } = useTournament()
   const [showAddTeamModal, setShowAddTeamModal] = useState(false)
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false)
   const [teamName, setTeamName] = useState("")
@@ -25,6 +27,20 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   // Add state for images
   const [teamLogo, setTeamLogo] = useState("")
   const [playerPhoto, setPlayerPhoto] = useState("")
+
+  // Custom refresh hook
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: async () => {
+      // Refresh tournament data
+      if (refreshData) {
+        await refreshData();
+      }
+    },
+    successMessage: "Data refreshed successfully!",
+    errorMessage: "Failed to refresh data. Please try again.",
+    showSuccessAlert: false, // Don't show success alert for management screen
+    showErrorAlert: true
+  });
 
   const handleAddTeam = async () => {
     if (!teamName.trim()) {
@@ -249,7 +265,11 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <RefreshableScrollView 
+      style={styles.container}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>{getScreenTitle()}</Text>
         <Text style={styles.subtitle}>{getScreenSubtitle()}</Text>
@@ -419,24 +439,6 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
             </View>
             <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
           </TouchableOpacity>
-
-          {/* <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate("UserManagement")}>
-            <Ionicons name="people-outline" size={24} color={COLORS.blue} />
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>User Management</Text>
-              <Text style={styles.actionSubtitle}>Create and manage tournament users (captains, managers)</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
-          </TouchableOpacity> */}
-
-          {/* <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate("Main", { screen: "Teams" })}>
-            <Ionicons name="create-outline" size={24} color={COLORS.blue} />
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Edit Teams & Players</Text>
-              <Text style={styles.actionSubtitle}>Modify existing teams and player information</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
-          </TouchableOpacity> */}
 
           <View style={styles.statsCard}>
             <Text style={styles.statsTitle}>Tournament Statistics</Text>
@@ -661,14 +663,23 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <RefreshableScrollView 
+              showsVerticalScrollIndicator={false}
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+            >
               <Text style={styles.modalTitle}>Add New Player</Text>
 
               {/* TEAM SELECTION - Only for management */}
               {user?.role === "management" && (
                 <View style={styles.pickerContainer}>
                   <Text style={styles.pickerLabel}>Select Team: </Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <RefreshableScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                  >
                     {tournament?.teams.map((team) => {
                       const isTeamFull = team.players.length >= 11
                       return (
@@ -696,7 +707,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                         </TouchableOpacity>
                       )
                     })}
-                  </ScrollView>
+                  </RefreshableScrollView>
                 </View>
               )}
 
@@ -777,14 +788,13 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                   <Text style={styles.confirmButtonText}>{loading ? "Adding..." : "Add Player"}</Text>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
+            </RefreshableScrollView>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </RefreshableScrollView>
   )
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
