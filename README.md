@@ -1,4 +1,4 @@
-# ⚽ Football Management App
+# ⚽ Football Tournament Management App
 
 A comprehensive React Native mobile application for managing football tournaments, teams, players, and matches. Built with Expo and TypeScript, featuring real-time synchronization across multiple devices.
 
