@@ -2,7 +2,7 @@
 
 A comprehensive React Native mobile application for managing football tournaments, teams, players, and matches. Built with Expo and TypeScript, featuring real-time synchronization across multiple devices.
 
-<img src="./assets/ASL_logo.png" alt="Football Management" style="max-width: 300px; height: auto;">
+<img src="./assets/ASL_logo.png" alt="Football Management" style="max-width: 100px; height: auto;">
 
 ## 🚀 Features
 
