@@ -17,11 +17,14 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.footballmanagement.app"
+      "bundleIdentifier": "com.footballmanagement.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/ASL_logo.png",
+        "foregroundImage": "",
         "backgroundColor": "#B98817"
       },
       "package": "com.footballmanagement.app"
@@ -29,10 +32,14 @@
     "web": {
       "favicon": "./assets/ASL_logo.png"
     },
-    
     "plugins": [
       "expo-font",
       "expo-web-browser"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0d1c6437-be13-414e-98eb-257c4ee2cac4"
+      }
+    }
   }
 }
