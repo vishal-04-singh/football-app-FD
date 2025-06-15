@@ -21,14 +21,26 @@ const MatchEventsTimeline: React.FC<MatchEventsTimelineProps> = ({
   awayTeamId,
   teams,
 }) => {
-  // Helper function to determine if event belongs to home team
+  console.log('=== MatchEventsTimeline DEBUG ===');
+  console.log('matchEvents received:', matchEvents);
+  console.log('homeTeamId:', homeTeamId);
+  console.log('awayTeamId:', awayTeamId);
+
+  // EXACT SAME LOGIC AS YOUR LIVE SCREEN
   const isEventFromHomeTeam = (event: any) => {
     const eventTeamId = String(event.team || event.teamId || "");
     const normalizedHomeTeamId = String(homeTeamId || "");
     
+    console.log('Event team check:', {
+      eventTeamId,
+      normalizedHomeTeamId,
+      playerName: event.playerName,
+      eventType: event.type
+    });
+    
     if (eventTeamId === normalizedHomeTeamId) return true;
     
-    // Fallback: check via player team lookup
+    // Fallback: check via player team lookup - EXACT SAME AS LIVE SCREEN
     if (event.playerId && teams) {
       const playerTeam = teams.find(team => 
         team.players?.some(player => 
@@ -46,7 +58,7 @@ const MatchEventsTimeline: React.FC<MatchEventsTimelineProps> = ({
     return false;
   };
 
-  // Helper function to get event icon
+  // EXACT SAME ICON LOGIC AS YOUR LIVE SCREEN
   const getEventIcon = (eventType: string) => {
     switch (eventType) {
       case "goal":
@@ -82,7 +94,7 @@ const MatchEventsTimeline: React.FC<MatchEventsTimelineProps> = ({
     }
   };
 
-  // Helper function to add time period dividers
+  // EXACT SAME DIVIDER LOGIC AS YOUR LIVE SCREEN
   const getEventsWithDividers = () => {
     if (!matchEvents || matchEvents.length === 0) return [];
     
@@ -148,6 +160,9 @@ const MatchEventsTimeline: React.FC<MatchEventsTimelineProps> = ({
     return eventsWithDividers;
   };
 
+  const processedEvents = getEventsWithDividers();
+  console.log('Processed events with dividers:', processedEvents);
+
   return (
     <View style={styles.eventsSection}>
       <View style={styles.eventsSectionHeader}>
@@ -163,7 +178,7 @@ const MatchEventsTimeline: React.FC<MatchEventsTimelineProps> = ({
         <Text style={styles.noEventsText}>No events yet</Text>
       ) : (
         <View style={styles.eventsTimeline}>
-          {getEventsWithDividers().map((item, index) => {
+          {processedEvents.map((item, index) => {
             if (item.type === 'divider') {
               return (
                 <View key={item.id} style={styles.timeDivider}>
@@ -186,8 +201,10 @@ const MatchEventsTimeline: React.FC<MatchEventsTimelineProps> = ({
             const event = item;
             const isHomeTeamEvent = isEventFromHomeTeam(event);
             
+            console.log(`Rendering event: ${event.playerName} at ${event.minute}' - isHomeTeam: ${isHomeTeamEvent}`);
+            
             return (
-              <View key={`${event.id}-${index}`} style={styles.eventRow}>
+              <View key={`${event.id || event.playerName}-${index}`} style={styles.eventRow}>
                 {/* Left side - Home team events */}
                 <View style={styles.eventSide}>
                   {isHomeTeamEvent && (
@@ -243,6 +260,7 @@ const MatchEventsTimeline: React.FC<MatchEventsTimelineProps> = ({
   );
 };
 
+// EXACT SAME STYLES AS YOUR LIVE SCREEN
 const styles = StyleSheet.create({
   eventsSection: {
     margin: 20,
@@ -278,6 +296,7 @@ const styles = StyleSheet.create({
     fontStyle: "italic",
     padding: 20,
   },
+  // EXACT SAME EVENT STYLES AS YOUR LIVE SCREEN
   eventsTimeline: {
     paddingVertical: 10,
   },
@@ -345,6 +364,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     textAlign: "center",
   },
+  // EXACT SAME TIME DIVIDER STYLES AS YOUR LIVE SCREEN
   timeDivider: {
     flexDirection: "row",
     alignItems: "center",

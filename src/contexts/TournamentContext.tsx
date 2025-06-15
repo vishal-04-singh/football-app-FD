@@ -408,8 +408,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Ensure jersey number is a valid number
       const jerseyNumber = Number(playerData.jerseyNumber);
-      if (isNaN(jerseyNumber) || jerseyNumber < 1 || jerseyNumber > 99) {
-        throw new Error("Jersey number must be between 1 and 99");
+      if (isNaN(jerseyNumber) || jerseyNumber < 1 || jerseyNumber > 1001) {
+        throw new Error("Jersey number must be between 1 and 1000");
       }
 
       // Check if jersey number is already taken in the team
@@ -427,8 +427,8 @@ export const TournamentProvider: React.FC<{ children: React.ReactNode }> = ({
         }
 
         // Check team capacity
-        if (team.players.length >= 14) {
-          throw new Error("Team already has maximum players (14)");
+        if (team.players.length >= 11) {
+          throw new Error("Team already has maximum players (11)");
         }
       }
 

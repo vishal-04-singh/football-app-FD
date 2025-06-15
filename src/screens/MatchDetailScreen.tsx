@@ -6,24 +6,46 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Image,
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
 import { useTournament } from "../contexts/TournamentContext";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { COLORS } from "../constants/colors";
 import type { Match, MatchEvent } from "../types";
 import { Ionicons } from "@expo/vector-icons";
-// Import the reusable component
+import { LinearGradient } from "expo-linear-gradient";
+// Import the reusable components
 import MatchEventsTimeline from "../../components/MatchEventsTimeline";
-import MatchStatistics from "../../components/MatchStatistics"
+import MatchStatistics from "../../components/MatchStatistics";
+import { RefreshableScrollView } from "../../components/RefreshableScrollView";
+import { useScrollRefresh } from "../../hooks/useScrollRefresh";
 
+interface PlayerSquad {
+  id: string;
+  name: string;
+  position: string;
+  jerseyNumber: number;
+  photo?: string;
+  isSubstitute: boolean;
+}
+
+interface MatchSquads {
+  homeTeam: {
+    main: PlayerSquad[];
+    substitutes: PlayerSquad[];
+  };
+  awayTeam: {
+    main: PlayerSquad[];
+    substitutes: PlayerSquad[];
+  };
+}
 
 const MatchDetailScreen: React.FC = () => {
-  const { tournament } = useTournament();
+  const { tournament, refreshData } = useTournament();
   const navigation = useNavigation();
   const route = useRoute();
   // @ts-ignore - ignore type issues with route params
@@ -31,56 +53,185 @@ const MatchDetailScreen: React.FC = () => {
 
   const [match, setMatch] = useState<Match | null>(null);
   const [sortedEvents, setSortedEvents] = useState<MatchEvent[]>([]);
-  const [activeTab, setActiveTab] = useState<"events" | "stats">("events");
+  const [activeTab, setActiveTab] = useState<"events" | "stats" | "squads">("events");
+  const [matchSquads, setMatchSquads] = useState<MatchSquads | null>(null);
+  const [loadingSquads, setLoadingSquads] = useState(false);
 
+  // Custom refresh hook
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: async () => {
+      // Refresh tournament data
+      if (refreshData) {
+        await refreshData();
+      }
+      
+      // Refresh match squads if they're loaded
+      if (match && matchSquads) {
+        await fetchMatchSquads(match);
+      }
+    },
+    successMessage: "Match details refreshed successfully!",
+    errorMessage: "Failed to refresh match details. Please try again.",
+    showSuccessAlert: false, // Don't show success alert for match detail refresh
+    showErrorAlert: true
+  });
+
+  // In your MatchDetailScreen.tsx, in the useEffect where you process events:
   useEffect(() => {
     if (tournament?.matches && matchId) {
-      const foundMatch = tournament.matches.find(
-        (m) =>
-          m.id === matchId ||
-          m._id === matchId ||
-          String(m.id) === String(matchId)
-      );
-
+      const foundMatch = tournament.matches.find(m => 
+        m.id === matchId || m._id === matchId || String(m.id) === String(matchId)
+      )
+      
       if (foundMatch) {
-        setMatch(foundMatch);
-
-        // Sort events by minute
+        setMatch(foundMatch)
+        
+        // IMPORTANT: Process events the SAME WAY as your live screen
         if (foundMatch.events && foundMatch.events.length > 0) {
-          // Clone events array and add teamId if not present
-          const eventsWithTeamIds = foundMatch.events.map((event) => {
-            // If event doesn't have teamId, attempt to infer it
-            if (!event.teamId && !event.team) {
-              // Try to determine team from player data or other logic
-              // For now, we'll use a placeholder - you may need to implement proper logic
-              const isHomeTeamPlayer = true; // Replace with actual logic based on your data
-              return {
-                ...event,
-                teamId: isHomeTeamPlayer
-                  ? foundMatch.homeTeamId
-                  : foundMatch.awayTeamId,
-                team: isHomeTeamPlayer
-                  ? foundMatch.homeTeamId
-                  : foundMatch.awayTeamId,
-              };
+          const eventsWithTeamIds = foundMatch.events.map(event => {
+            // ENHANCED team detection - try multiple approaches
+            let eventTeamId = event.team || event.teamId;
+            
+            if (!eventTeamId) {
+              // Try to determine from player data
+              if (event.playerId && tournament?.teams) {
+                const playerTeam = tournament.teams.find(team => 
+                  team.players?.some(player => 
+                    String(player.id) === String(event.playerId) || 
+                    String(player._id) === String(event.playerId)
+                  )
+                );
+                
+                if (playerTeam) {
+                  eventTeamId = playerTeam.id || playerTeam._id;
+                }
+              }
+              
+              // Fallback: try to guess from match structure
+              if (!eventTeamId) {
+                // This is a simplified assumption - you may need more logic here
+                eventTeamId = foundMatch.homeTeamId; // Default to home team
+              }
             }
-            // Ensure both team and teamId are present for compatibility
+            
             return {
               ...event,
-              team: event.team || event.teamId,
-              teamId: event.teamId || event.team,
+              team: eventTeamId,
+              teamId: eventTeamId,
+              // Ensure we have required fields
+              id: event.id || `event-${Date.now()}-${Math.random()}`,
+              playerName: event.playerName || 'Unknown Player',
+              minute: event.minute || 0,
+              type: event.type || 'goal'
             };
           });
-
+          
           // Sort events by minute
-          const events = [...eventsWithTeamIds].sort(
-            (a, b) => a.minute - b.minute
-          );
+          const events = [...eventsWithTeamIds].sort((a, b) => a.minute - b.minute);
           setSortedEvents(events);
+          
+          console.log('MatchDetailScreen - Processed events:', events);
+        }
+        
+        // Auto-fetch squads when match loads
+        if (foundMatch.status === "completed") {
+          fetchMatchSquads(foundMatch);
         }
       }
     }
   }, [tournament, matchId]);
+
+  const fetchMatchSquads = async (matchData: Match) => {
+    setLoadingSquads(true);
+    try {
+      // Fetch squads for both teams
+      const [homeTeamResponse, awayTeamResponse] = await Promise.all([
+        fetch(`http://localhost:3000/api/teams/${matchData.homeTeamId}/players`),
+        fetch(`http://localhost:3000/api/teams/${matchData.awayTeamId}/players`)
+      ]);
+
+      if (!homeTeamResponse.ok || !awayTeamResponse.ok) {
+        throw new Error('Failed to fetch team squads');
+      }
+
+      const homeTeamPlayers = await homeTeamResponse.json();
+      const awayTeamPlayers = await awayTeamResponse.json();
+
+      // Separate main squad (7 players) and substitutes (4 players)
+      const homeMainPlayers = homeTeamPlayers.filter((player: any) => !player.isSubstitute).slice(0, 7);
+      const homeSubstitutes = homeTeamPlayers.filter((player: any) => player.isSubstitute).slice(0, 4);
+      
+      const awayMainPlayers = awayTeamPlayers.filter((player: any) => !player.isSubstitute).slice(0, 7);
+      const awaySubstitutes = awayTeamPlayers.filter((player: any) => player.isSubstitute).slice(0, 4);
+
+      setMatchSquads({
+        homeTeam: {
+          main: homeMainPlayers.map((player: any) => ({
+            id: player._id || player.id,
+            name: player.name,
+            position: player.position,
+            jerseyNumber: player.jerseyNumber,
+            photo: player.photo,
+            isSubstitute: false
+          })),
+          substitutes: homeSubstitutes.map((player: any) => ({
+            id: player._id || player.id,
+            name: player.name,
+            position: player.position,
+            jerseyNumber: player.jerseyNumber,
+            photo: player.photo,
+            isSubstitute: true
+          }))
+        },
+        awayTeam: {
+          main: awayMainPlayers.map((player: any) => ({
+            id: player._id || player.id,
+            name: player.name,
+            position: player.position,
+            jerseyNumber: player.jerseyNumber,
+            photo: player.photo,
+            isSubstitute: false
+          })),
+          substitutes: awaySubstitutes.map((player: any) => ({
+            id: player._id || player.id,
+            name: player.name,
+            position: player.position,
+            jerseyNumber: player.jerseyNumber,
+            photo: player.photo,
+            isSubstitute: true
+          }))
+        }
+      });
+
+    } catch (error) {
+      console.error('Error fetching match squads:', error);
+      // Fallback to getting players from tournament context
+      if (tournament?.teams) {
+        const homeTeam = tournament.teams.find(t => t.id === matchData.homeTeamId || t._id === matchData.homeTeamId);
+        const awayTeam = tournament.teams.find(t => t.id === matchData.awayTeamId || t._id === matchData.awayTeamId);
+        
+        if (homeTeam?.players && awayTeam?.players) {
+          const homeMainPlayers = homeTeam.players.filter(p => !p.isSubstitute).slice(0, 7);
+          const homeSubstitutes = homeTeam.players.filter(p => p.isSubstitute).slice(0, 4);
+          const awayMainPlayers = awayTeam.players.filter(p => !p.isSubstitute).slice(0, 7);
+          const awaySubstitutes = awayTeam.players.filter(p => p.isSubstitute).slice(0, 4);
+
+          setMatchSquads({
+            homeTeam: {
+              main: homeMainPlayers,
+              substitutes: homeSubstitutes
+            },
+            awayTeam: {
+              main: awayMainPlayers,
+              substitutes: awaySubstitutes
+            }
+          });
+        }
+      }
+    } finally {
+      setLoadingSquads(false);
+    }
+  };
 
   const getTeamInfo = (teamId: string) => {
     const team = tournament?.teams.find(
@@ -112,9 +263,140 @@ const MatchDetailScreen: React.FC = () => {
     });
   };
 
+  const renderPlayerCard = (player: PlayerSquad, isSubstitute: boolean = false) => {
+    return (
+      <View key={player.id} style={[styles.playerCard, isSubstitute && styles.substituteCard]}>
+        <View style={styles.playerJersey}>
+          <Text style={styles.jerseyNumber}>{player.jerseyNumber}</Text>
+        </View>
+        
+        <View style={styles.playerPhotoContainer}>
+          {player.photo ? (
+            <Image source={{ uri: player.photo }} style={styles.playerPhoto} />
+          ) : (
+            <LinearGradient
+              colors={[COLORS.primary + '40', COLORS.primary + '20']}
+              style={styles.playerPhotoPlaceholder}
+            >
+              <Text style={styles.playerInitials}>
+                {player.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
+              </Text>
+            </LinearGradient>
+          )}
+        </View>
+        
+        <View style={styles.playerInfo}>
+          <Text style={styles.playerName} numberOfLines={1}>
+            {player.name}
+          </Text>
+          <Text style={styles.playerPosition}>
+            {player.position}
+          </Text>
+          {isSubstitute && (
+            <Text style={styles.substituteLabel}>SUB</Text>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  const renderSquadsTab = () => {
+    if (loadingSquads) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading squads...</Text>
+        </View>
+      );
+    }
+
+    if (!matchSquads) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="people-outline" size={60} color={COLORS.gray} />
+          <Text style={styles.emptyText}>No squad data available</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => match && fetchMatchSquads(match)}
+          >
+            <Text style={styles.retryButtonText}>Retry Loading Squads</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    const homeTeam = getTeamInfo(match!.homeTeamId);
+    const awayTeam = getTeamInfo(match!.awayTeamId);
+
+    return (
+      <RefreshableScrollView 
+        style={styles.squadsContainer}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
+        {/* Home Team Squad */}
+        <View style={styles.teamSquadSection}>
+          <View style={styles.teamSquadHeader}>
+            <Text style={styles.teamSquadTitle}>{homeTeam.name}</Text>
+            <Text style={styles.squadCount}>
+              {matchSquads.homeTeam.main.length + matchSquads.homeTeam.substitutes.length} Players
+            </Text>
+          </View>
+          
+          {/* Main Squad */}
+          <View style={styles.squadSection}>
+            <Text style={styles.squadSectionTitle}>Starting XI (7 Players)</Text>
+            <View style={styles.playersGrid}>
+              {matchSquads.homeTeam.main.map(player => renderPlayerCard(player, false))}
+            </View>
+          </View>
+          
+          {/* Substitutes */}
+          {matchSquads.homeTeam.substitutes.length > 0 && (
+            <View style={styles.squadSection}>
+              <Text style={styles.squadSectionTitle}>Substitutes ({matchSquads.homeTeam.substitutes.length})</Text>
+              <View style={styles.playersGrid}>
+                {matchSquads.homeTeam.substitutes.map(player => renderPlayerCard(player, true))}
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Away Team Squad */}
+        <View style={styles.teamSquadSection}>
+          <View style={styles.teamSquadHeader}>
+            <Text style={styles.teamSquadTitle}>{awayTeam.name}</Text>
+            <Text style={styles.squadCount}>
+              {matchSquads.awayTeam.main.length + matchSquads.awayTeam.substitutes.length} Players
+            </Text>
+          </View>
+          
+          {/* Main Squad */}
+          <View style={styles.squadSection}>
+            <Text style={styles.squadSectionTitle}>Starting XI (7 Players)</Text>
+            <View style={styles.playersGrid}>
+              {matchSquads.awayTeam.main.map(player => renderPlayerCard(player, false))}
+            </View>
+          </View>
+          
+          {/* Substitutes */}
+          {matchSquads.awayTeam.substitutes.length > 0 && (
+            <View style={styles.squadSection}>
+              <Text style={styles.squadSectionTitle}>Substitutes ({matchSquads.awayTeam.substitutes.length})</Text>
+              <View style={styles.playersGrid}>
+                {matchSquads.awayTeam.substitutes.map(player => renderPlayerCard(player, true))}
+              </View>
+            </View>
+          )}
+        </View>
+      </RefreshableScrollView>
+    );
+  };
+
   if (!match) {
     return (
       <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
         <Text style={styles.loadingText}>Loading match details...</Text>
       </View>
     );
@@ -122,61 +404,6 @@ const MatchDetailScreen: React.FC = () => {
 
   const homeTeam = getTeamInfo(match.homeTeamId);
   const awayTeam = getTeamInfo(match.awayTeamId);
-
-  // Count stats for statistics tab
-  const homeStats = {
-    goals:
-      sortedEvents.filter(
-        (e) =>
-          e.type === "goal" &&
-          (e.teamId === match.homeTeamId || e.team === match.homeTeamId)
-      ).length || 0,
-    yellowCards:
-      sortedEvents.filter(
-        (e) =>
-          e.type === "yellow_card" &&
-          (e.teamId === match.homeTeamId || e.team === match.homeTeamId)
-      ).length || 0,
-    redCards:
-      sortedEvents.filter(
-        (e) =>
-          e.type === "red_card" &&
-          (e.teamId === match.homeTeamId || e.team === match.homeTeamId)
-      ).length || 0,
-    substitutions:
-      sortedEvents.filter(
-        (e) =>
-          e.type === "substitution" &&
-          (e.teamId === match.homeTeamId || e.team === match.homeTeamId)
-      ).length || 0,
-  };
-
-  const awayStats = {
-    goals:
-      sortedEvents.filter(
-        (e) =>
-          e.type === "goal" &&
-          (e.teamId === match.awayTeamId || e.team === match.awayTeamId)
-      ).length || 0,
-    yellowCards:
-      sortedEvents.filter(
-        (e) =>
-          e.type === "yellow_card" &&
-          (e.teamId === match.awayTeamId || e.team === match.awayTeamId)
-      ).length || 0,
-    redCards:
-      sortedEvents.filter(
-        (e) =>
-          e.type === "red_card" &&
-          (e.teamId === match.awayTeamId || e.team === match.awayTeamId)
-      ).length || 0,
-    substitutions:
-      sortedEvents.filter(
-        (e) =>
-          e.type === "substitution" &&
-          (e.teamId === match.awayTeamId || e.team === match.awayTeamId)
-      ).length || 0,
-  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -190,10 +417,24 @@ const MatchDetailScreen: React.FC = () => {
           <Ionicons name="arrow-back" size={24} color={COLORS.white} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Match Details</Text>
-        <View style={styles.placeholder} />
+        <TouchableOpacity
+          style={styles.refreshButton}
+          onPress={onRefresh}
+          disabled={refreshing}
+        >
+          <Ionicons 
+            name={refreshing ? "sync" : "refresh"} 
+            size={20} 
+            color={COLORS.primary} 
+          />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.container}>
+      <RefreshableScrollView 
+        style={styles.container}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         {/* Match Score Card */}
         <View style={styles.scoreCard}>
           <View style={styles.matchDate}>
@@ -279,9 +520,28 @@ const MatchDetailScreen: React.FC = () => {
               STATISTICS
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === "squads" && styles.activeTab]}
+            onPress={() => {
+              setActiveTab("squads");
+              // Load squads when tab is selected if not already loaded
+              if (!matchSquads && !loadingSquads) {
+                fetchMatchSquads(match);
+              }
+            }}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === "squads" && styles.activeTabText,
+              ]}
+            >
+              SQUADS
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* REPLACED: Match Events Timeline with reusable component */}
+        {/* Tab Content */}
         {activeTab === "events" && (
           <MatchEventsTimeline
             matchEvents={sortedEvents}
@@ -303,12 +563,13 @@ const MatchDetailScreen: React.FC = () => {
             teams={tournament?.teams}
           />
         )}
-      </ScrollView>
+
+        {activeTab === "squads" && renderSquadsTab()}
+      </RefreshableScrollView>
     </SafeAreaView>
   );
 };
 
-// REMOVED: All timeline-related styles since they're now in the MatchEventsTimeline component
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -333,6 +594,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
   },
+  refreshButton: {
+    padding: 8,
+  },
   placeholder: {
     width: 40,
   },
@@ -341,10 +605,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: COLORS.black,
+    padding: 20,
   },
   loadingText: {
     color: COLORS.white,
     fontSize: 16,
+    marginTop: 10,
   },
 
   // Score card styles
@@ -474,84 +740,141 @@ const styles = StyleSheet.create({
     color: COLORS.black,
   },
 
-  // Stats styles
-  statsContainer: {
-    margin: 16,
+  // Squads styles
+  squadsContainer: {
+    flex: 1,
+    marginHorizontal: 16,
   },
-  statCard: {
+  teamSquadSection: {
     backgroundColor: COLORS.background,
     borderRadius: 15,
     padding: 16,
+    marginBottom: 16,
   },
-  statHeader: {
+  teamSquadHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.1)",
+    borderBottomColor: COLORS.gray + '30',
     paddingBottom: 12,
-    marginBottom: 16,
   },
-  statTitle: {
-    color: COLORS.white,
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  statRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  teamStatValue: {
-    width: 60,
-    alignItems: "center",
-  },
-  statValueText: {
+  teamSquadTitle: {
     color: COLORS.white,
     fontSize: 18,
-    fontWeight: "bold",
+    fontWeight: 'bold',
   },
-  statType: {
-    flex: 1,
-    alignItems: "center",
+  squadCount: {
+    color: COLORS.primary,
+    fontSize: 12,
+    fontWeight: 'bold',
   },
-  statTypeText: {
-    color: COLORS.gray,
-    fontSize: 14,
+  squadSection: {
+    marginBottom: 20,
   },
-  cardIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  yellowCardIndicator: {
-    width: 10,
-    height: 14,
-    backgroundColor: "#FFD700",
-    marginRight: 8,
-    borderRadius: 1,
-  },
-  redCardIndicator: {
-    width: 10,
-    height: 14,
-    backgroundColor: COLORS.red,
-    marginRight: 8,
-    borderRadius: 1,
-  },
-  subIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  teamNameRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.1)",
-  },
-  statTeamName: {
+  squadSectionTitle: {
     color: COLORS.primary,
     fontSize: 14,
-    fontWeight: "bold",
+    fontWeight: 'bold',
+    marginBottom: 12,
+  },
+  playersGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  playerCard: {
+    width: '48%',
+    backgroundColor: COLORS.gray + '20',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  substituteCard: {
+    borderColor: COLORS.orange,
+    borderWidth: 1,
+  },
+  playerJersey: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  jerseyNumber: {
+    color: COLORS.black,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  playerPhotoContainer: {
+    marginRight: 8,
+  },
+  playerPhoto: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+  },
+  playerPhotoPlaceholder: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playerInitials: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  playerInfo: {
+    flex: 1,
+  },
+  playerName: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  playerPosition: {
+    color: COLORS.gray,
+    fontSize: 10,
+    marginTop: 2,
+  },
+  substituteLabel: {
+    color: COLORS.orange,
+    fontSize: 9,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    color: COLORS.gray,
+    fontSize: 16,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 15,
+  },
+  retryButtonText: {
+    color: COLORS.black,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });
 

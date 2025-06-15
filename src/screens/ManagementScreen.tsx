@@ -2,17 +2,19 @@
 
 import type React from "react"
 import { useState } from "react"
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Modal } from "react-native"
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Modal } from "react-native"
 import { useAuth } from "../contexts/AuthContext"
 import { useTournament } from "../contexts/TournamentContext"
 import { COLORS } from "../constants/colors"
 import { Ionicons } from "@expo/vector-icons"
 import CustomImagePicker from "../../components/ImagePicker"
 import PositionPicker from "../../components/PositionPicker"
+import { RefreshableScrollView } from "../../components/RefreshableScrollView"
+import { useScrollRefresh } from "../../hooks/useScrollRefresh"
 
 const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   const { user, logout } = useAuth()
-  const { tournament, addTeam, addPlayer } = useTournament()
+  const { tournament, addTeam, addPlayer, refreshData } = useTournament()
   const [showAddTeamModal, setShowAddTeamModal] = useState(false)
   const [showAddPlayerModal, setShowAddPlayerModal] = useState(false)
   const [teamName, setTeamName] = useState("")
@@ -25,6 +27,20 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   // Add state for images
   const [teamLogo, setTeamLogo] = useState("")
   const [playerPhoto, setPlayerPhoto] = useState("")
+
+  // Custom refresh hook
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: async () => {
+      // Refresh tournament data
+      if (refreshData) {
+        await refreshData();
+      }
+    },
+    successMessage: "Data refreshed successfully!",
+    errorMessage: "Failed to refresh data. Please try again.",
+    showSuccessAlert: false, // Don't show success alert for management screen
+    showErrorAlert: true
+  });
 
   const handleAddTeam = async () => {
     if (!teamName.trim()) {
@@ -100,8 +116,8 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
 
     // Validate jersey number
     const jerseyNum = Number.parseInt(playerNumber.trim())
-    if (isNaN(jerseyNum) || jerseyNum < 1 || jerseyNum > 99) {
-      Alert.alert("Invalid Input", "Jersey number must be between 1 and 99")
+    if (isNaN(jerseyNum) || jerseyNum < 0 || jerseyNum > 1001) {
+      Alert.alert("Invalid Input", "Jersey number must be between 1 and 1000")
       return
     }
 
@@ -129,7 +145,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
       return
     }
 
-    // Check team capacity (11 players maximum: 7 playing + 3 substitutes)
+    // Check team capacity (11 players maximum: 7 playing + 4 substitutes)
     if (team.players.length >= 11) {
       Alert.alert("Team Full", "Team already has maximum players (11)")
       return
@@ -139,8 +155,8 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
     const substitutesCount = team.players.filter((p) => p.isSubstitute).length
 
     // Check specific squad limits
-    if (mainPlayersCount >= 7 && substitutesCount >= 3) {
-      Alert.alert("Squad Full", "Team already has 7 playing squad members and 3 substitutes")
+    if (mainPlayersCount >= 7 && substitutesCount >= 4) {
+      Alert.alert("Squad Full", "Team already has 7 playing squad members and 4 substitutes")
       return
     }
 
@@ -197,7 +213,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
       } else if (error.message.includes("maximum players")) {
         errorMessage = "Team already has maximum players (11)"
       } else if (error.message.includes("maximum substitutes")) {
-        errorMessage = "Team already has maximum substitutes (3)"
+        errorMessage = "Team already has maximum substitutes (4)"
       } else if (error.message.includes("Invalid")) {
         errorMessage = error.message
       } else if (error.message.includes("Internal server error")) {
@@ -249,7 +265,11 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <RefreshableScrollView 
+      style={styles.container}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>{getScreenTitle()}</Text>
         <Text style={styles.subtitle}>{getScreenSubtitle()}</Text>
@@ -420,24 +440,6 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
             <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
           </TouchableOpacity>
 
-          {/* <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate("UserManagement")}>
-            <Ionicons name="people-outline" size={24} color={COLORS.blue} />
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>User Management</Text>
-              <Text style={styles.actionSubtitle}>Create and manage tournament users (captains, managers)</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
-          </TouchableOpacity> */}
-
-          {/* <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate("Main", { screen: "Teams" })}>
-            <Ionicons name="create-outline" size={24} color={COLORS.blue} />
-            <View style={styles.actionContent}>
-              <Text style={styles.actionTitle}>Edit Teams & Players</Text>
-              <Text style={styles.actionSubtitle}>Modify existing teams and player information</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={COLORS.gray} />
-          </TouchableOpacity> */}
-
           <View style={styles.statsCard}>
             <Text style={styles.statsTitle}>Tournament Statistics</Text>
             <View style={styles.statsGrid}>
@@ -483,7 +485,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                 <Text style={styles.teamStatLabel}>Playing</Text>
               </View>
               <View style={styles.teamStatItem}>
-                <Text style={styles.teamStatValue}>{userTeam.players.filter((p) => p.isSubstitute).length}/3</Text>
+                <Text style={styles.teamStatValue}>{userTeam.players.filter((p) => p.isSubstitute).length}/4</Text>
                 <Text style={styles.teamStatLabel}>Subs</Text>
               </View>
             </View>
@@ -548,7 +550,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
           <View style={styles.captainNote}>
             <Ionicons name="information-circle-outline" size={20} color={COLORS.blue} />
             <Text style={styles.captainNoteText}>
-              As team captain, you can add new players to your team (max 11: 7 playing + 3 substitutes). Only tournament
+              As team captain, you can add new players to your team (max 11: 7 playing + 4 substitutes). Only tournament
               managers can create new teams and edit existing player information.
             </Text>
           </View>
@@ -596,7 +598,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
             <Ionicons name="information-circle-outline" size={20} color={COLORS.blue} />
             <Text style={styles.captainNoteText}>
               Once you are assigned to a team by tournament management, you will be able to add players to your team
-              (max 11: 7 playing + 3 substitutes).
+              (max 11: 7 playing + 4 substitutes).
             </Text>
           </View>
         </View>
@@ -661,14 +663,23 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <RefreshableScrollView 
+              showsVerticalScrollIndicator={false}
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+            >
               <Text style={styles.modalTitle}>Add New Player</Text>
 
               {/* TEAM SELECTION - Only for management */}
               {user?.role === "management" && (
                 <View style={styles.pickerContainer}>
-                  <Text style={styles.pickerLabel}>Select Team: *</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <Text style={styles.pickerLabel}>Select Team: </Text>
+                  <RefreshableScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                  >
                     {tournament?.teams.map((team) => {
                       const isTeamFull = team.players.length >= 11
                       return (
@@ -696,7 +707,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                         </TouchableOpacity>
                       )
                     })}
-                  </ScrollView>
+                  </RefreshableScrollView>
                 </View>
               )}
 
@@ -709,7 +720,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                     <Text style={styles.teamInfoDetails}>
                       Current players: {userTeam.players.length}/11 | Playing:{" "}
                       {userTeam.players.filter((p) => !p.isSubstitute).length}/7 | Subs:{" "}
-                      {userTeam.players.filter((p) => p.isSubstitute).length}/3
+                      {userTeam.players.filter((p) => p.isSubstitute).length}/4
                     </Text>
                   </View>
                 </View>
@@ -725,7 +736,7 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                 />
               </View>
 
-              <Text style={styles.inputLabel}>Player Name: *</Text>
+              <Text style={styles.inputLabel}>Player Name: </Text>
               <TextInput
                 style={styles.input}
                 placeholder="Enter player name"
@@ -735,19 +746,19 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
               />
 
               <View style={styles.positionSection}>
-                <Text style={styles.inputLabel}>Position: *</Text>
+                <Text style={styles.inputLabel}>Position: </Text>
                 <PositionPicker selectedPosition={playerPosition} onPositionSelect={setPlayerPosition} />
               </View>
 
-              <Text style={styles.inputLabel}>Jersey Number: *</Text>
+              <Text style={styles.inputLabel}>Jersey Number: </Text>
               <TextInput
                 style={styles.input}
-                placeholder="Enter jersey number (1-99)"
+                placeholder="Enter jersey number (0-1000)"
                 placeholderTextColor={COLORS.gray}
                 value={playerNumber}
                 onChangeText={setPlayerNumber}
                 keyboardType="numeric"
-                maxLength={2}
+                maxLength={4}
               />
 
               <View style={styles.modalButtons}>
@@ -777,14 +788,13 @@ const ManagementScreen: React.FC<{ navigation?: any }> = ({ navigation }) => {
                   <Text style={styles.confirmButtonText}>{loading ? "Adding..." : "Add Player"}</Text>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
+            </RefreshableScrollView>
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </RefreshableScrollView>
   )
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,

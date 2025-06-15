@@ -55,6 +55,7 @@ export interface Match {
 }
 
 export interface MatchEvent {
+  [x: string]: string
   teamId: string
   id: string
   type: "goal" | "yellow_card" | "red_card" | "substitution" | "assist"

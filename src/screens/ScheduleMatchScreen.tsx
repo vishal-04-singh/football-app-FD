@@ -6,7 +6,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   Alert,
   Modal,
@@ -21,17 +20,17 @@ import { Ionicons } from "@expo/vector-icons";
 import type { ScheduleMatchData, Player, Match } from "../types";
 import CustomDateTimePicker from "../../components/DateTimePicker";
 import apiService from "../../services/api";
+import { RefreshableScrollView } from "../../components/RefreshableScrollView";
+import { useScrollRefresh } from "../../hooks/useScrollRefresh";
+
+// Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-06-14 07:59:47
+// Current User's Login: vishal-04-singh
 
 const MATCH_STATUS = {
   UPCOMING: "upcoming",
   LIVE: "live",
   COMPLETED: "completed",
 };
-
-// Current timestamp from requirements - CRITICAL for consistency across the app
-// Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-06-09 08:39:28
-
-const CURRENT_USERNAME = "vishal-04-singh";
 
 // Get current date/time in local time
 const getCurrentLocalDateTime = () => {
@@ -85,12 +84,50 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     getCurrentLocalDateTime()
   );
 
-  const [refreshing, setRefreshing] = useState(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Date and time picker states - Initialize with current date/time
   const [date, setDate] = useState(new Date());
   const [time, setTime] = useState(new Date());
+
+  // Get current date and time
+  const getCurrentDateTime = () => {
+    const now = new Date()
+    return {
+      date: now.toISOString().split('T')[0], // YYYY-MM-DD format
+      time: now.toTimeString().split(' ')[0], // HH:MM:SS format
+      fullDateTime: now.toISOString().slice(0, 19).replace('T', ' '), // YYYY-MM-DD HH:MM:SS
+      userFriendlyDate: now.toLocaleDateString("en-US", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      }),
+      userFriendlyTime: now.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      })
+    }
+  }
+
+  const currentDateTimeInfo = getCurrentDateTime()
+
+  // Custom refresh hook
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: async () => {
+      // Refresh tournament data
+      if (refreshData) {
+        await refreshData();
+      }
+      // Update match statuses after refresh
+      updateMatchStatuses();
+    },
+    successMessage: "Match data updated successfully!",
+    errorMessage: "Failed to refresh match data. Please try again.",
+    showSuccessAlert: false, // Don't show success alert for schedule screen
+    showErrorAlert: true
+  });
 
   // Start pulsing animation for live indicators
   useEffect(() => {
@@ -195,20 +232,6 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
     });
 
     setCurrentMatches(updatedMatches);
-  };
-
-  // Refresh all data
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await refreshData();
-      updateMatchStatuses();
-      Alert.alert("Success", "Match data refreshed!");
-    } catch (error) {
-      console.error("Error refreshing data:", error);
-    } finally {
-      setRefreshing(false);
-    }
   };
 
   // Fixed date change handler with proper state updates
@@ -373,8 +396,8 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
         }));
       } else {
         // Add to substitutes (max 3)
-        if (currentSquad.substitutes.length >= 3) {
-          Alert.alert("Limit Reached", "Maximum 3 substitutes allowed");
+        if (currentSquad.substitutes.length >= 4) {
+          Alert.alert("Limit Reached", "Maximum 4 substitutes allowed");
           return;
         }
 
@@ -459,13 +482,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       return;
     }
 
-    if (homeSquad.substitutes.length !== 3) {
-      Alert.alert("Squad Error", "Home team must have exactly 3 substitutes");
+    if (homeSquad.substitutes.length !== 4) {
+      Alert.alert("Squad Error", "Home team must have exactly 4 substitutes");
       return;
     }
 
-    if (awaySquad.substitutes.length !== 3) {
-      Alert.alert("Squad Error", "Away team must have exactly 3 substitutes");
+    if (awaySquad.substitutes.length !== 4) {
+      Alert.alert("Squad Error", "Away team must have exactly 4 substitutes");
       return;
     }
 
@@ -795,6 +818,24 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+      {/* Current Date/Time and User Info Bar */}
+      <View style={styles.statusBar}>
+        <View style={styles.dateTimeContainer}>
+          <View style={styles.dateTimeRow}>
+            
+          </View>
+          <View style={styles.dateTimeRow}>
+            
+          </View>
+        </View>
+        
+        <View style={styles.userInfoContainer}>
+          <View style={styles.userBadge}>
+            
+          </View>
+        </View>
+      </View>
+
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -803,37 +844,34 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
           <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Schedule Matches</Text>
-        {user?.role === "management" && (
+        <View style={styles.headerActions}>
           <TouchableOpacity
-            style={styles.addButton}
-            onPress={openScheduleModal}
+            style={styles.refreshButton}
+            onPress={onRefresh}
+            disabled={refreshing}
           >
-            <Ionicons name="add" size={24} color={COLORS.primary} />
+            <Ionicons 
+              name={refreshing ? "sync" : "refresh"} 
+              size={20} 
+              color={COLORS.primary} 
+            />
           </TouchableOpacity>
-        )}
-      </View>
-      
-      {/* Current time display with local time */}
-      <View style={styles.currentTimeBar}>
-        <View style={styles.currentTimeDisplay}>
-          <Ionicons name="time-outline" size={16} color={COLORS.white} />
-          <Text style={styles.currentTimeText}>
-            {getCurrentTimeForDisplay()} (Local)
-          </Text>
+          {user?.role === "management" && (
+            <TouchableOpacity
+              style={styles.addButton}
+              onPress={openScheduleModal}
+            >
+              <Ionicons name="add" size={24} color={COLORS.primary} />
+            </TouchableOpacity>
+          )}
         </View>
-        <TouchableOpacity
-          style={styles.refreshButton}
-          onPress={handleRefresh}
-          disabled={refreshing}
-        >
-          <Ionicons name="refresh" size={16} color={COLORS.white} />
-          <Text style={styles.refreshButtonText}>
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </Text>
-        </TouchableOpacity>
       </View>
       
-      <ScrollView style={styles.content}>
+      <RefreshableScrollView 
+        style={styles.content}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>📅 Match Status Logic</Text>
           <Text style={styles.infoText}>
@@ -853,7 +891,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                 color={COLORS.primary}
               />
               <Text style={styles.welcomeTitle}>
-                Welcome, {user.name || CURRENT_USERNAME}
+                Welcome, {user.name || 'vishal-04-singh'}
               </Text>
             </View>
             <Text style={styles.welcomeText}>
@@ -896,6 +934,22 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   Tap the + button to schedule a match
                 </Text>
               )}
+              
+              {/* Add refresh button in empty state */}
+              <TouchableOpacity
+                style={styles.emptyRefreshButton}
+                onPress={onRefresh}
+                disabled={refreshing}
+              >
+                <Ionicons 
+                  name={refreshing ? "sync" : "refresh"} 
+                  size={20} 
+                  color={COLORS.primary} 
+                />
+                <Text style={styles.emptyRefreshText}>
+                  {refreshing ? "Refreshing..." : "Refresh"}
+                </Text>
+              </TouchableOpacity>
             </View>
           ) : (
             upcomingMatches.map(renderMatchCard)
@@ -911,7 +965,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
             {completedMatches.map(renderMatchCard)}
           </View>
         )}
-      </ScrollView>
+      </RefreshableScrollView>
 
       {/* Schedule Match Modal */}
       <Modal
@@ -922,13 +976,23 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <RefreshableScrollView 
+              showsVerticalScrollIndicator={false}
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+            >
               <Text style={styles.modalTitle}>Schedule New Match</Text>
 
-              <View style={styles.weekSelector}>
-                <Text style={styles.inputLabel}>Tournament Week:</Text>
+              <Text style={styles.inputLabel}>Tournament Week:</Text>
+              <RefreshableScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.weekSelector}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+              >
                 <View style={styles.weekButtons}>
-                  {[1, 2, 3].map((week) => (
+                  {[1, 2, 3,4].map((week) => (
                     <TouchableOpacity
                       key={week}
                       style={[
@@ -949,14 +1013,16 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     </TouchableOpacity>
                   ))}
                 </View>
-              </View>
+              </RefreshableScrollView>
 
               <View style={styles.teamSelection}>
                 <Text style={styles.inputLabel}>Home Team:</Text>
-                <ScrollView
+                <RefreshableScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   style={styles.teamPicker}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
                 >
                   {teams?.map((team) => (
                     <TouchableOpacity
@@ -1003,15 +1069,17 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   {(!teams || teams.length === 0) && (
                     <Text style={styles.noTeamsText}>No teams available</Text>
                   )}
-                </ScrollView>
+                </RefreshableScrollView>
               </View>
 
               <View style={styles.teamSelection}>
                 <Text style={styles.inputLabel}>Away Team:</Text>
-                <ScrollView
+                <RefreshableScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   style={styles.teamPicker}
+                  refreshing={refreshing}
+                  onRefresh={onRefresh}
                 >
                   {teams?.map((team) => (
                     <TouchableOpacity
@@ -1058,7 +1126,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   {(!teams || teams.length === 0) && (
                     <Text style={styles.noTeamsText}>No teams available</Text>
                   )}
-                </ScrollView>
+                </RefreshableScrollView>
               </View>
 
               {/* Squad Selection with Inline Dropdown */}
@@ -1072,7 +1140,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       styles.squadButton,
                       !selectedHomeTeam && styles.squadButtonDisabled,
                       homeSquad.mainPlayers.length === 7 &&
-                        homeSquad.substitutes.length === 3 &&
+                        homeSquad.substitutes.length === 4 &&
                         styles.squadButtonComplete,
                     ]}
                     onPress={() => {
@@ -1094,7 +1162,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           !selectedHomeTeam
                             ? COLORS.gray
                             : homeSquad.mainPlayers.length === 7 &&
-                              homeSquad.substitutes.length === 3
+                              homeSquad.substitutes.length === 4
                             ? COLORS.green
                             : COLORS.primary
                         }
@@ -1104,12 +1172,12 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           styles.squadButtonText,
                           !selectedHomeTeam && styles.squadButtonTextDisabled,
                           homeSquad.mainPlayers.length === 7 &&
-                            homeSquad.substitutes.length === 3 &&
+                            homeSquad.substitutes.length === 4 &&
                             styles.squadButtonTextComplete,
                         ]}
                       >
                         Home Squad (
-                        {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/10)
+                        {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/11)
                       </Text>
                       <Ionicons
                         name={showHomePlayerPicker ? "chevron-up" : "chevron-down"}
@@ -1119,7 +1187,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     </View>
                     <Text style={styles.squadButtonSubtext}>
                       Main: {homeSquad.mainPlayers.length}/7 • Sub:{" "}
-                      {homeSquad.substitutes.length}/3
+                      {homeSquad.substitutes.length}/4
                     </Text>
                   </TouchableOpacity>
 
@@ -1138,10 +1206,12 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                         </TouchableOpacity>
                       </View>
                       
-                      <ScrollView 
+                      <RefreshableScrollView 
                         style={styles.playerDropdownList} 
                         nestedScrollEnabled={true}
                         showsVerticalScrollIndicator={false}
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
                       >
                         {homeTeamPlayers.map((player, index) => {
                           const isMainSelected = isPlayerInSquad(player, "home", "main");
@@ -1194,13 +1264,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                                     styles.playerDropdownButton,
                                     styles.subPlayerButton,
                                     isSubSelected && styles.playerDropdownButtonSelectedSub,
-                                    homeSquad.substitutes.length >= 3 && !isSubSelected && styles.playerDropdownButtonDisabled
+                                    homeSquad.substitutes.length >= 4 && !isSubSelected && styles.playerDropdownButtonDisabled
                                   ]}
                                   onPress={() => {
                                     console.log("Sub button pressed for:", player.name);
                                     togglePlayerInSquad(player, "home", "sub");
                                   }}
-                                  disabled={homeSquad.substitutes.length >= 3 && !isSubSelected}
+                                  disabled={homeSquad.substitutes.length >= 4 && !isSubSelected}
                                 >
                                   <Text style={[
                                     styles.playerDropdownButtonText,
@@ -1214,12 +1284,12 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                             </View>
                           );
                         })}
-                      </ScrollView>
+                      </RefreshableScrollView>
                       
                       {/* Dropdown Footer */}
                       <View style={styles.dropdownFooter}>
                         <Text style={styles.dropdownFooterText}>
-                          Selected: {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/10 players
+                          Selected: {homeSquad.mainPlayers.length + homeSquad.substitutes.length}/11 players
                         </Text>
                       </View>
                     </View>
@@ -1233,7 +1303,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                       styles.squadButton,
                       !selectedAwayTeam && styles.squadButtonDisabled,
                       awaySquad.mainPlayers.length === 7 &&
-                        awaySquad.substitutes.length === 3 &&
+                        awaySquad.substitutes.length === 4 &&
                         styles.squadButtonComplete,
                     ]}
                     onPress={() => {
@@ -1255,7 +1325,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           !selectedAwayTeam
                             ? COLORS.gray
                             : awaySquad.mainPlayers.length === 7 &&
-                              awaySquad.substitutes.length === 3
+                              awaySquad.substitutes.length === 4
                             ? COLORS.green
                             : COLORS.primary
                         }
@@ -1265,12 +1335,12 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                           styles.squadButtonText,
                           !selectedAwayTeam && styles.squadButtonTextDisabled,
                           awaySquad.mainPlayers.length === 7 &&
-                            awaySquad.substitutes.length === 3 &&
+                            awaySquad.substitutes.length === 4 &&
                             styles.squadButtonTextComplete,
                         ]}
                       >
                         Away Squad (
-                        {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/10)
+                        {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/11)
                       </Text>
                       <Ionicons
                         name={showAwayPlayerPicker ? "chevron-up" : "chevron-down"}
@@ -1280,7 +1350,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                     </View>
                     <Text style={styles.squadButtonSubtext}>
                       Main: {awaySquad.mainPlayers.length}/7 • Sub:{" "}
-                      {awaySquad.substitutes.length}/3
+                      {awaySquad.substitutes.length}/4
                     </Text>
                   </TouchableOpacity>
 
@@ -1299,10 +1369,12 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                         </TouchableOpacity>
                       </View>
                       
-                      <ScrollView 
+                      <RefreshableScrollView 
                         style={styles.playerDropdownList} 
                         nestedScrollEnabled={true}
                         showsVerticalScrollIndicator={false}
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
                       >
                         {awayTeamPlayers.map((player, index) => {
                           const isMainSelected = isPlayerInSquad(player, "away", "main");
@@ -1355,13 +1427,13 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                                     styles.playerDropdownButton,
                                     styles.subPlayerButton,
                                     isSubSelected && styles.playerDropdownButtonSelectedSub,
-                                    awaySquad.substitutes.length >= 3 && !isSubSelected && styles.playerDropdownButtonDisabled
+                                    awaySquad.substitutes.length >= 4 && !isSubSelected && styles.playerDropdownButtonDisabled
                                   ]}
                                   onPress={() => {
                                     console.log("Sub button pressed for:", player.name);
                                     togglePlayerInSquad(player, "away", "sub");
                                   }}
-                                  disabled={awaySquad.substitutes.length >= 3 && !isSubSelected}
+                                  disabled={awaySquad.substitutes.length >= 4 && !isSubSelected}
                                 >
                                   <Text style={[
                                     styles.playerDropdownButtonText,
@@ -1375,12 +1447,12 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                             </View>
                           );
                         })}
-                      </ScrollView>
+                      </RefreshableScrollView>
                       
                       {/* Dropdown Footer */}
                       <View style={styles.dropdownFooter}>
                         <Text style={styles.dropdownFooterText}>
-                          Selected: {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/10 players
+                          Selected: {awaySquad.mainPlayers.length + awaySquad.substitutes.length}/11 players
                         </Text>
                       </View>
                     </View>
@@ -1468,7 +1540,7 @@ const ScheduleMatchScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
                   <Text style={styles.confirmButtonText}>Schedule Match</Text>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
+            </RefreshableScrollView>
           </View>
         </View>
       </Modal>
@@ -1481,13 +1553,60 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.black,
   },
+  // Status Bar Styles
+  statusBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  dateTimeContainer: {
+    flex: 1,
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  currentDate: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  currentTime: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  userInfoContainer: {
+    alignItems: 'flex-end',
+  },
+  userBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 15,
+    borderWidth: 1,
+  },
+  userLogin: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     padding: 20,
     backgroundColor: COLORS.background,
-    marginTop: 20,
   },
   backButton: {
     padding: 5,
@@ -1499,39 +1618,18 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "center",
   },
-  addButton: {
-    padding: 5,
-  },
-  currentTimeBar: {
-    backgroundColor: COLORS.blue,
-    padding: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  currentTimeDisplay: {
+  headerActions: {
     flexDirection: "row",
     alignItems: "center",
-  },
-  currentTimeText: {
-    color: COLORS.white,
-    fontSize: 14,
-    marginLeft: 5,
-    fontWeight: "bold",
   },
   refreshButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.2)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
     borderRadius: 15,
+    marginRight: 10,
   },
-  refreshButtonText: {
-    color: COLORS.white,
-    fontSize: 12,
-    fontWeight: "bold",
-    marginLeft: 5,
+  addButton: {
+    padding: 5,
   },
   content: {
     flex: 1,

@@ -10,16 +10,58 @@ import { COLORS } from "../constants/colors"
 import type { Match } from "../types"
 import { Ionicons } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
+import { RefreshableScrollView } from "../../components/RefreshableScrollView"
+import { useScrollRefresh } from "../../hooks/useScrollRefresh"
 
 const { width } = Dimensions.get('window')
 
+// Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-06-14 07:44:35
+// Current User's Login: vishal-04-singh
+
 const MatchesScreen: React.FC = () => {
-  const { tournament } = useTournament()
+  const { tournament, refreshData } = useTournament()
   const { user } = useAuth()
   const navigation = useNavigation()
   const [selectedWeek, setSelectedWeek] = useState(1)
 
   const weeks = [1, 2, 3, 4]
+
+  // Get current date and time
+  const getCurrentDateTime = () => {
+    const now = new Date()
+    return {
+      date: now.toISOString().split('T')[0], // YYYY-MM-DD format
+      time: now.toTimeString().split(' ')[0], // HH:MM:SS format
+      fullDateTime: now.toISOString().slice(0, 19).replace('T', ' '), // YYYY-MM-DD HH:MM:SS
+      userFriendlyDate: now.toLocaleDateString("en-US", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+      }),
+      userFriendlyTime: now.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true
+      })
+    }
+  }
+
+  const currentDateTime = getCurrentDateTime()
+
+  // Custom refresh hook
+  const { refreshing, onRefresh } = useScrollRefresh({
+    onRefresh: async () => {
+      // Refresh tournament data
+      if (refreshData) {
+        await refreshData();
+      }
+    },
+    successMessage: "Matches updated successfully!",
+    errorMessage: "Failed to refresh matches. Please try again.",
+    showSuccessAlert: false, // Don't show success alert for matches refresh
+    showErrorAlert: true
+  });
 
   // Group and prioritize live matches
   const getMatchesData = useCallback((week: number) => {
@@ -125,7 +167,7 @@ const MatchesScreen: React.FC = () => {
     return timeString.replace(/:\d{2}$/, ''); // Remove seconds if present
   }
 
-  const renderMatch = ({ item: match }: { item: Match }) => {
+  const renderMatch = (match: Match) => {
     const homeTeam = getTeamInfo(match.homeTeamId);
     const awayTeam = getTeamInfo(match.awayTeamId);
     const stadiumImage = match.stadiumImage || require("../../assets/ground.jpg");
@@ -133,6 +175,7 @@ const MatchesScreen: React.FC = () => {
     
     return (
       <TouchableOpacity 
+        key={match.id || match._id}
         style={styles.matchCard}
         onPress={() => {
           if (match.status === "completed") {
@@ -263,9 +306,6 @@ const MatchesScreen: React.FC = () => {
                 </View>
               </View>
 
-              {/* Footer actions */}
-              
-
               {match.status === "upcoming" && (
                 <View style={styles.upcomingActions}>
                   <TouchableOpacity style={styles.reminderButton}>
@@ -281,9 +321,9 @@ const MatchesScreen: React.FC = () => {
     );
   }
 
-  // New component to render a group of matches for a single date
-  const renderMatchGroup = ({ item }: { item: { date: string, matches: Match[], isLiveSection?: boolean }}) => (
-    <View style={styles.matchDateGroup}>
+  // Component to render a group of matches for a single date
+  const renderMatchGroup = (item: { date: string, matches: Match[], isLiveSection?: boolean }) => (
+    <View key={item.date} style={styles.matchDateGroup}>
       <View style={styles.dateHeader}>
         <View style={styles.dateLineDivider} />
         <View style={styles.dateContainer}>
@@ -307,24 +347,43 @@ const MatchesScreen: React.FC = () => {
         <View style={styles.dateLineDivider} />
       </View>
       
-      {item.matches.map(match => (
-        <View key={match.id || match._id || String(Math.random())}>
-          {renderMatch({ item: match })}
-        </View>
-      ))}
+      {item.matches.map(match => renderMatch(match))}
     </View>
   );
 
   return (
-    <View style={styles.container}>
+    <RefreshableScrollView 
+      style={styles.container}
+      refreshing={refreshing}
+      onRefresh={onRefresh}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* Current Date/Time and User Info Bar */}
+      
+
       {/* Enhanced Header */}
       <LinearGradient
         colors={[COLORS.background, 'rgba(0,0,0,0.9)']}
         style={styles.header}
       >
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>Matches</Text>
-          <Text style={styles.subtitle}>Tournament Schedule</Text>
+        <View style={styles.headerTop}>
+          <View style={styles.titleContainer}>
+            <Text style={styles.title}>Matches</Text>
+            <Text style={styles.subtitle}>Tournament Schedule</Text>
+          </View>
+          
+          {/* Manual refresh button */}
+          <TouchableOpacity
+            style={styles.refreshButton}
+            onPress={onRefresh}
+            disabled={refreshing}
+          >
+            <Ionicons 
+              name={refreshing ? "sync" : "refresh"} 
+              size={24} 
+              color={COLORS.primary} 
+            />
+          </TouchableOpacity>
         </View>
         
         <ScrollView 
@@ -357,13 +416,9 @@ const MatchesScreen: React.FC = () => {
         </ScrollView>
       </LinearGradient>
 
-      <FlatList
-        data={getMatchesData(selectedWeek)}
-        renderItem={renderMatchGroup}
-        keyExtractor={(item) => item.date}
-        contentContainerStyle={styles.matchesList}
-        showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
+      {/* Matches Content */}
+      <View style={styles.matchesContent}>
+        {getMatchesData(selectedWeek).length === 0 ? (
           <View style={styles.emptyState}>
             <LinearGradient
               colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.02)']}
@@ -372,10 +427,30 @@ const MatchesScreen: React.FC = () => {
               <Ionicons name="calendar-outline" size={60} color={COLORS.primary} />
               <Text style={styles.emptyTitle}>No Matches Scheduled</Text>
               <Text style={styles.emptyText}>Check back later for Week {selectedWeek} fixtures</Text>
+              
+              {/* Add refresh button in empty state */}
+              <TouchableOpacity
+                style={styles.emptyRefreshButton}
+                onPress={onRefresh}
+                disabled={refreshing}
+              >
+                <Ionicons 
+                  name={refreshing ? "sync" : "refresh"} 
+                  size={20} 
+                  color={COLORS.primary} 
+                />
+                <Text style={styles.emptyRefreshText}>
+                  {refreshing ? "Refreshing..." : "Refresh"}
+                </Text>
+              </TouchableOpacity>
             </LinearGradient>
           </View>
-        }
-      />
+        ) : (
+          <View style={styles.matchesList}>
+            {getMatchesData(selectedWeek).map(item => renderMatchGroup(item))}
+          </View>
+        )}
+      </View>
 
       {selectedWeek === 4 && (
         <LinearGradient
@@ -391,7 +466,7 @@ const MatchesScreen: React.FC = () => {
           </Text>
         </LinearGradient>
       )}
-    </View>
+    </RefreshableScrollView>
   )
 }
 
@@ -400,13 +475,69 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.black,
   },
+  // Status Bar Styles
+  statusBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  dateTimeContainer: {
+    flex: 1,
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  currentDate: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  currentTime: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+  userInfoContainer: {
+    alignItems: 'flex-end',
+  },
+  userBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  userLogin: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
   header: {
     paddingTop: 20,
     paddingHorizontal: 20,
     paddingBottom: 15,
   },
-  titleContainer: {
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 20,
+  },
+  titleContainer: {
+    flex: 1,
   },
   title: {
     fontSize: 32,
@@ -419,6 +550,12 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: "500",
     marginTop: 4,
+  },
+  refreshButton: {
+    padding: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
+    marginTop: 5,
   },
   weekSelector: {
     flexDirection: "row",
@@ -455,6 +592,9 @@ const styles = StyleSheet.create({
     color: COLORS.black,
     fontWeight: "700",
     fontSize: 14,
+  },
+  matchesContent: {
+    flex: 1,
   },
   matchesList: {
     padding: 20,
@@ -742,6 +882,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "center",
     lineHeight: 22,
+    marginBottom: 20,
+  },
+  emptyRefreshButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  emptyRefreshText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+    marginLeft: 8,
   },
   playoffInfo: {
     margin: 20,

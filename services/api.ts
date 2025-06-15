@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 const API_BASE_URL = "http://192.168.29.71:3000/api"
 
 class ApiService {
+  [x: string]: any
   private baseURL: string
   private token: string | null = null
 
@@ -350,7 +351,10 @@ async createMatch(matchData: any) {
   async healthCheck() {
     return await this.request("/health")
   }
+
+  
 }
+
 
 export const apiService = new ApiService()
 export default apiService

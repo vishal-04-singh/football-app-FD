@@ -212,13 +212,13 @@ const LoginScreen: React.FC = () => {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
+          {/* <TouchableOpacity
             style={styles.demoButton}
             onPress={showDemoCredentials}
             disabled={loading || !!socialLoading}
           >
             <Text style={styles.demoButtonText}>Show Demo Credentials</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
     </KeyboardAvoidingView>
