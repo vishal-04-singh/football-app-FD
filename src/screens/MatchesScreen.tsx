@@ -170,7 +170,7 @@ const MatchesScreen: React.FC = () => {
   const renderMatch = (match: Match) => {
     const homeTeam = getTeamInfo(match.homeTeamId);
     const awayTeam = getTeamInfo(match.awayTeamId);
-    const stadiumImage = match.stadiumImage || require("../../assets/ground.jpg");
+    const stadiumImage = match.stadiumImage || require("../../assets/arena.png");
     const statusColors = getStatusColor(match.status);
     
     return (
